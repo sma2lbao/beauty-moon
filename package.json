@@ -4,9 +4,9 @@
   "license": "MIT",
   "scripts": {},
   "private": true,
-  "dependencies": {},
   "devDependencies": {
     "@nx/js": "22.7.5",
+    "@nxlv/python": "^22.2.0",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",
     "@swc/helpers": "0.5.18",
@@ -16,6 +16,7 @@
     "typescript": "~5.9.2"
   },
   "workspaces": [
+    "apps/*",
     "packages/*"
   ]
 }

@@ -1,0 +1,22 @@
+[project]
+name = "beauty-moon"
+version = "0.1.0"
+description = "Nx Monorepo managing Python projects with uv"
+requires-python = ">=3.10"
+dependencies = [ "luna-mind" ]
+
+[tool.uv.workspace]
+members = [ "apps/*", "apps/luna-mind", "packages/*" ]
+
+[tool.uv.sources]
+luna-mind = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "ruff>=0.8.2",
+  "autopep8>=2.3.1",
+  "pytest>=8.3.4",
+  "pytest-sugar>=1.0.0",
+  "pytest-cov>=6.0.0",
+  "pytest-html>=4.1.1"
+]
