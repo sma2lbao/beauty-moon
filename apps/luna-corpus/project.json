@@ -73,6 +73,13 @@
         "verbose": false,
         "debug": false
       }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+        "cwd": "{projectRoot}"
+      }
     }
   },
   "tags": [],

@@ -12,6 +12,15 @@ settings = get_settings()
 _COLLECTION_NAME = "document_chunks"
 
 
+def get_vector_store():
+    """Get the vector store (collection) instance.
+
+    Returns:
+        Chroma collection for document chunks
+    """
+    return get_collection()
+
+
 def get_client() -> chromadb.PersistentClient:
     """Get Chroma persistent client instance."""
     settings.chroma_data_dir.mkdir(parents=True, exist_ok=True)
