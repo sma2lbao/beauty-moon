@@ -2,7 +2,7 @@
 name = "beauty-moon"
 version = "0.1.0"
 description = "Nx Monorepo managing Python projects with uv"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [ "luna-corpus", "luna-mind" ]
 
 [tool.uv.workspace]
