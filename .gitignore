@@ -17,6 +17,41 @@ node_modules
 .settings/
 *.sublime-workspace
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment variables (keep .env.example)
+.env
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Reports
+reports/
+
+# Chroma vector store data
+data/
+
+# uv lock file (optional - uncomment if needed)
+# uv.lock
+
 # IDE - VSCode
 .vscode/*
 !.vscode/settings.json
