@@ -82,3 +82,38 @@ Thumbs.db
 .claude/settings.local.json
 .nx/polygraph
 .nx/self-healing
+
+# uv
+.uv/
+
+# ruff cache
+.ruff_cache/
+
+# hatch/pip cache
+.hatch/
+
+# Coverage
+coverage/
+
+# IDE - JetBrains
+.idea/
+
+# Logs
+*.log
+logs/
+
+# MySQL/Chroma data
+*.db
+*.sqlite
+*.sqlite3
+
+# Temp files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Local development
+.local/
+.tmp/
