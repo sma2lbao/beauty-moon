@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [ "luna-corpus", "luna-mind" ]
 
 [tool.uv.workspace]
-members = [ "apps/*", "apps/luna-corpus", "apps/luna-mind", "packages/*" ]
+members = [ "apps/luna-corpus", "apps/luna-mind", "packages/*" ]
 
 [tool.uv.sources.luna-corpus]
 workspace = true
