@@ -35,6 +35,8 @@ dependencies = [
     "chromadb>=0.5.0",
     # Ollama
     "langchain-ollama>=0.1.0",
+    # DeepSeek
+    "langchain-deepseek>=0.1.0",
     # MySQL
     "mysql-connector-python>=8.0.0",
     "sqlalchemy>=2.0.0",

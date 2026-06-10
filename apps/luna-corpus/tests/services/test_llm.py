@@ -77,3 +77,50 @@ def test_check_ollama_health_failure():
 
         result = llm.check_ollama_health()
         assert result is False
+
+
+def test_check_deepseek_health_with_key():
+    """Test DeepSeek health check when API key is configured."""
+    from app.core.config import Settings
+    from app.services import llm
+
+    mock_settings = Settings(deepseek_api_key="test-key-123")
+
+    with patch.object(llm, "settings", mock_settings):
+        result = llm.check_deepseek_health()
+        assert result is True
+
+
+def test_check_deepseek_health_without_key():
+    """Test DeepSeek health check when API key is not configured."""
+    from app.core.config import Settings
+    from app.services import llm
+
+    mock_settings = Settings(deepseek_api_key="")
+
+    with patch.object(llm, "settings", mock_settings):
+        result = llm.check_deepseek_health()
+        assert result is False
+
+
+def test_get_provider_status():
+    """Test getting provider status."""
+    from app.core.config import LLMProvider, Settings
+    from app.services import llm
+
+    mock_settings = Settings(
+        llm_provider=LLMProvider.OLLAMA,
+        deepseek_api_key="test-key",
+        ollama_base_url="http://localhost:11434",
+        ollama_model="llama3.1",
+        ollama_embed_model="nomic-embed-text",
+        deepseek_model="deepseek-chat",
+    )
+
+    with patch.object(llm, "settings", mock_settings):
+        with patch.object(llm, "check_ollama_health", return_value=True):
+            status = llm.get_provider_status()
+
+            assert status["current_provider"] == "ollama"
+            assert status["ollama"]["available"] is True
+            assert status["deepseek"]["configured"] is True
