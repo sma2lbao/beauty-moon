@@ -12,6 +12,7 @@ class LLMProvider(str, Enum):
 
     OLLAMA = "ollama"
     DEEPSEEK = "deepseek"
+    DOUBAO = "doubao"
 
 
 class Settings(BaseSettings):
@@ -59,6 +60,24 @@ class Settings(BaseSettings):
     deepseek_model: str = Field(
         default="deepseek-chat",
         description="DeepSeek model name (e.g., deepseek-chat, deepseek-coder)",
+    )
+
+    # Doubao (Volcengine)
+    volcengine_access_key: str = Field(
+        default="",
+        description="Volcengine Access Key for Doubao embeddings",
+    )
+    volcengine_secret_key: str = Field(
+        default="",
+        description="Volcengine Secret Key for Doubao embeddings",
+    )
+    volcengine_region: str = Field(
+        default="cn-beijing",
+        description="Volcengine region",
+    )
+    doubao_embed_model: str = Field(
+        default="doubao-embedding-vision-250615",
+        description="Doubao embedding model name",
     )
 
     # API

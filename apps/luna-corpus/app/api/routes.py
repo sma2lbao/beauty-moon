@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -295,7 +296,8 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
     # Check MySQL
     mysql_status = "connected"
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
+        db.commit()
     except Exception:
         mysql_status = "error"
 
