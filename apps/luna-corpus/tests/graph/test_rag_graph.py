@@ -1,7 +1,5 @@
 """Tests for LangGraph RAG flow."""
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 def test_retrieve_node():
