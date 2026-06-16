@@ -1,14 +1,16 @@
 """API routes for luna-corpus."""
-from typing import Annotated
+import json
+from typing import Annotated, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import Chunk, ContentStatus, Document
-from app.graph.rag_graph import answer_question
+from app.graph.rag_graph import answer_question, answer_question_stream
 from app.services.document_processor import DocumentProcessor
 
 router = APIRouter(prefix="/api/v1", tags=["qa"])
@@ -117,6 +119,43 @@ async def query(question_req: QuestionRequest) -> AnswerResponse:
         answer=result["answer"],
         sources=enriched_sources,
         processing_time_ms=result["processing_time_ms"],
+    )
+
+
+async def stream_event_generator(question: str) -> AsyncGenerator[str, None]:
+    """Generate SSE events for streaming answer.
+
+    Args:
+        question: User question
+
+    Yields:
+        SSE formatted event strings
+    """
+    try:
+        async for event in answer_question_stream(question):
+            yield f"data: {json.dumps(event)}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"
+
+
+@router.post("/qa/stream")
+async def stream_query(question_req: QuestionRequest):
+    """Stream answer to a question using RAG.
+
+    Args:
+        question_req: Question request
+
+    Returns:
+        StreamingResponse with SSE events
+    """
+    return StreamingResponse(
+        stream_event_generator(question_req.question),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

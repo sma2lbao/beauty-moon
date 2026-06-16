@@ -25,6 +25,12 @@ export interface AnswerResponse {
   processing_time_ms: number
 }
 
+export type StreamEvent =
+  | { event: 'retrieval_status'; data: string }
+  | { event: 'token'; data: string }
+  | { event: 'done'; data: { answer: string; sources: Source[]; processing_time_ms: number } }
+  | { event: 'error'; data: string }
+
 export interface Document {
   id: string
   title: string
@@ -43,6 +49,44 @@ export interface DocumentCreate {
   source?: string
 }
 
+async function* streamQuery(question: string): AsyncGenerator<StreamEvent, void, unknown> {
+  const response = await fetch(`${API_BASE}/qa/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  })
+
+  if (!response.ok) {
+    throw new Error('Stream query failed')
+  }
+
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data.trim()) {
+            yield JSON.parse(data) as StreamEvent
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 export const api = {
   async healthCheck(): Promise<HealthStatus> {
     const res = await fetch(`${API_BASE}/health`)
@@ -59,6 +103,8 @@ export const api = {
     if (!res.ok) throw new Error('Query failed')
     return res.json()
   },
+
+  streamQuery,
 
   async getDocuments(): Promise<{ documents: Document[]; total: number }> {
     const res = await fetch(`${API_BASE}/documents`)

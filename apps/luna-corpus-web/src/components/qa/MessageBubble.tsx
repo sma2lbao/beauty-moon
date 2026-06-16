@@ -1,15 +1,16 @@
 import { type AnswerResponse } from '@/lib/api'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { SourceCard } from './SourceCard'
-import { User, Bot } from 'lucide-react'
+import { User, Bot, Loader2 } from 'lucide-react'
 
 interface MessageBubbleProps {
   type: 'user' | 'assistant'
   content?: string
   answer?: AnswerResponse
+  isStreaming?: boolean
 }
 
-export function MessageBubble({ type, content, answer }: MessageBubbleProps) {
+export function MessageBubble({ type, content, answer, isStreaming = false }: MessageBubbleProps) {
   const isUser = type === 'user'
 
   return (
@@ -17,6 +18,7 @@ export function MessageBubble({ type, content, answer }: MessageBubbleProps) {
       <CardHeader className="flex flex-row items-center gap-2 pb-2">
         {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
         <span className="font-medium">{isUser ? '你' : 'Luna'}</span>
+        {isStreaming && !isUser && <Loader2 className="w-3 h-3 animate-spin" />}
       </CardHeader>
       <CardContent className={isUser ? 'pt-0' : ''}>
         {isUser ? (
@@ -36,6 +38,8 @@ export function MessageBubble({ type, content, answer }: MessageBubbleProps) {
               处理时间: {answer.processing_time_ms}ms
             </p>
           </>
+        ) : isStreaming && content ? (
+          <p className="whitespace-pre-wrap">{content}</p>
         ) : null}
       </CardContent>
     </Card>

@@ -186,6 +186,34 @@ Answer:"""
     return response.content if hasattr(response, "content") else str(response)
 
 
+async def generate_streaming_response(prompt: str, context: str | None = None):
+    """Generate streaming response from LLM.
+
+    Args:
+        prompt: User prompt
+        context: Optional context to prepend
+
+    Yields:
+        Response chunks as they arrive
+    """
+    chat = get_chat_model()
+
+    if context:
+        full_prompt = f"""Based on the following context, answer the question.
+
+Context:
+{context}
+
+Question: {prompt}
+
+Answer:"""
+    else:
+        full_prompt = prompt
+
+    async for chunk in chat.astream(full_prompt):
+        yield chunk.content if hasattr(chunk, "content") else str(chunk)
+
+
 def check_ollama_health() -> bool:
     """Check if Ollama service is healthy.
 
