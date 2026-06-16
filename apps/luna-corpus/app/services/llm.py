@@ -1,5 +1,4 @@
 """LLM and embeddings integration supporting multiple providers."""
-import base64
 import hashlib
 import hmac
 import time
@@ -98,14 +97,15 @@ class VolcengineEmbeddings:
 
 def get_chat_model() -> Any:
     """Get chat model instance based on configured provider."""
-    if settings.llm_provider == LLMProvider.DEEPSEEK:
-        from langchain_deepseek import ChatDeepSeek
+    if settings.llm_provider == LLMProvider.ARK:
+        from langchain_openai import ChatOpenAI
 
-        return ChatDeepSeek(
-            model=settings.deepseek_model,
-            api_key=settings.deepseek_api_key,
+        return ChatOpenAI(
+            model=settings.ark_model,
+            api_key=settings.ark_api_key,
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
             temperature=0.7,
-            stream=False,
+            model_kwargs={"stream": False},
         )
     else:
         return ChatOllama(
@@ -201,13 +201,13 @@ def check_ollama_health() -> bool:
         return False
 
 
-def check_deepseek_health() -> bool:
-    """Check if DeepSeek API is accessible.
+def check_ark_health() -> bool:
+    """Check if Ark API is accessible.
 
     Returns:
-        True if DeepSeek API key is configured
+        True if Ark API key is configured
     """
-    return bool(settings.deepseek_api_key)
+    return bool(settings.ark_api_key)
 
 
 def check_doubao_health() -> bool:
@@ -233,9 +233,9 @@ def get_provider_status() -> dict[str, Any]:
             "model": settings.ollama_model,
             "embed_model": settings.ollama_embed_model,
         },
-        "deepseek": {
-            "configured": check_deepseek_health(),
-            "model": settings.deepseek_model,
+        "ark": {
+            "configured": check_ark_health(),
+            "model": settings.ark_model,
         },
         "doubao": {
             "configured": check_doubao_health(),

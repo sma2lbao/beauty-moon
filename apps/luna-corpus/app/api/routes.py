@@ -78,7 +78,7 @@ class HealthResponse(BaseModel):
     mysql: str
     chroma: str
     ollama: str
-    deepseek: str
+    ark: str
     llm_provider: str
 
 
@@ -289,7 +289,7 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
     """
     from app.core.config import get_settings
     from app.db.vectorstore import get_vector_store
-    from app.services.llm import check_deepseek_health, check_ollama_health
+    from app.services.llm import check_ark_health, check_ollama_health
 
     settings = get_settings()
 
@@ -311,8 +311,8 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
     # Check Ollama
     ollama_status = "connected" if check_ollama_health() else "disconnected"
 
-    # Check DeepSeek
-    deepseek_status = "configured" if check_deepseek_health() else "not configured"
+    # Check Ark
+    ark_status = "configured" if check_ark_health() else "not configured"
 
     overall_status = "ok"
     if mysql_status != "connected" or chroma_status != "connected":
@@ -323,6 +323,6 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
         mysql=mysql_status,
         chroma=chroma_status,
         ollama=ollama_status,
-        deepseek=deepseek_status,
+        ark=ark_status,
         llm_provider=settings.llm_provider.value,
     )

@@ -1,8 +1,6 @@
 """Tests for Ollama integration."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 def test_embed_text():
     """Test embedding a single text."""
@@ -79,27 +77,27 @@ def test_check_ollama_health_failure():
         assert result is False
 
 
-def test_check_deepseek_health_with_key():
-    """Test DeepSeek health check when API key is configured."""
+def test_check_ark_health_with_key():
+    """Test Ark health check when API key is configured."""
     from app.core.config import Settings
     from app.services import llm
 
-    mock_settings = Settings(deepseek_api_key="test-key-123")
+    mock_settings = Settings(ark_api_key="test-key-123")
 
     with patch.object(llm, "settings", mock_settings):
-        result = llm.check_deepseek_health()
+        result = llm.check_ark_health()
         assert result is True
 
 
-def test_check_deepseek_health_without_key():
-    """Test DeepSeek health check when API key is not configured."""
+def test_check_ark_health_without_key():
+    """Test Ark health check when API key is not configured."""
     from app.core.config import Settings
     from app.services import llm
 
-    mock_settings = Settings(deepseek_api_key="")
+    mock_settings = Settings(ark_api_key="")
 
     with patch.object(llm, "settings", mock_settings):
-        result = llm.check_deepseek_health()
+        result = llm.check_ark_health()
         assert result is False
 
 
@@ -110,17 +108,18 @@ def test_get_provider_status():
 
     mock_settings = Settings(
         llm_provider=LLMProvider.OLLAMA,
-        deepseek_api_key="test-key",
+        ark_api_key="test-key",
         ollama_base_url="http://localhost:11434",
         ollama_model="llama3.1",
         ollama_embed_model="nomic-embed-text",
-        deepseek_model="deepseek-chat",
+        ark_model="deepseek-v4-pro-260425",
     )
 
-    with patch.object(llm, "settings", mock_settings):
-        with patch.object(llm, "check_ollama_health", return_value=True):
-            status = llm.get_provider_status()
+    with patch.object(llm, "settings", mock_settings), patch.object(
+        llm, "check_ollama_health", return_value=True
+    ):
+        status = llm.get_provider_status()
 
-            assert status["current_provider"] == "ollama"
-            assert status["ollama"]["available"] is True
-            assert status["deepseek"]["configured"] is True
+        assert status["current_provider"] == "ollama"
+        assert status["ollama"]["available"] is True
+        assert status["ark"]["configured"] is True

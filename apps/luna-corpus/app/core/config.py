@@ -11,7 +11,7 @@ class LLMProvider(str, Enum):
     """Available LLM providers."""
 
     OLLAMA = "ollama"
-    DEEPSEEK = "deepseek"
+    ARK = "ark"
     DOUBAO = "doubao"
 
 
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # LLM Provider
     llm_provider: LLMProvider = Field(
         default=LLMProvider.OLLAMA,
-        description="LLM provider to use (ollama or deepseek)",
+        description="LLM provider to use (ollama or ark)",
     )
 
     # Ollama
@@ -52,14 +52,14 @@ class Settings(BaseSettings):
         description="Ollama model name for embeddings",
     )
 
-    # DeepSeek
-    deepseek_api_key: str = Field(
+    # Ark
+    ark_api_key: str = Field(
         default="",
-        description="DeepSeek API key",
+        description="Ark API key",
     )
-    deepseek_model: str = Field(
-        default="deepseek-chat",
-        description="DeepSeek model name (e.g., deepseek-chat, deepseek-coder)",
+    ark_model: str = Field(
+        default="deepseek-v4-pro-260425",
+        description="Ark model name (e.g., doubao-pro-32k, doubao-lite-32k)",
     )
 
     # Doubao (Volcengine)
