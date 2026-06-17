@@ -15,6 +15,15 @@ class LLMProvider(str, Enum):
     DOUBAO = "doubao"
 
 
+class AgentMode(str, Enum):
+    """Agent execution modes."""
+
+    DIRECT = "direct"
+    REACT = "react"
+    PLAN = "plan"
+    LANGGRAPH = "langgraph"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -96,6 +105,20 @@ class Settings(BaseSettings):
     )
     conversation_summarize_threshold: int = Field(
         default=20, description="Message count before triggering summarization"
+    )
+
+    # Agent
+    agent_default_mode: str = Field(
+        default="direct", description="Default agent mode"
+    )
+    agent_max_steps: int = Field(
+        default=10, description="Maximum steps for agent execution"
+    )
+    agent_react_max_iterations: int = Field(
+        default=5, description="Max iterations for ReAct agent"
+    )
+    agent_plan_max_steps: int = Field(
+        default=10, description="Max steps in a plan"
     )
 
 
