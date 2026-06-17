@@ -1,9 +1,16 @@
 """Database connection and session management."""
+import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Annotated
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# Load .env file from project root
+project_root = Path(__file__).parent.parent.parent
+load_dotenv(project_root / ".env")
 
 from app.core.config import get_settings
 from app.db.models import Base

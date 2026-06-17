@@ -87,6 +87,17 @@ class Settings(BaseSettings):
     # RAG
     retrieval_top_k: int = Field(default=5, description="Number of chunks to retrieve")
 
+    # Conversation Memory
+    conversation_memory_window: int = Field(
+        default=10, description="Number of recent messages to include in context"
+    )
+    conversation_max_tokens: int = Field(
+        default=4000, description="Maximum tokens allocated for conversation history"
+    )
+    conversation_summarize_threshold: int = Field(
+        default=20, description="Message count before triggering summarization"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

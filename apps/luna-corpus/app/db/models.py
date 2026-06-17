@@ -41,6 +41,14 @@ class ContentType(str, enum.Enum):
     CODE = "code"
 
 
+class MessageRole(str, enum.Enum):
+    """Role of message sender."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
 class Document(Base):
     """Document model."""
 
@@ -93,3 +101,54 @@ class Chunk(Base):
 
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
+
+
+class Conversation(Base):
+    """Conversation session model."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    messages: Mapped[list["Message"]] = relationship(
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="Message.created_at",
+    )
+
+
+class Message(Base):
+    """Message in a conversation."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[MessageRole] = mapped_column(Enum(MessageRole), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+    # Relationships
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="messages"
+    )
