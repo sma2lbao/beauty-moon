@@ -87,6 +87,9 @@ class PlanExecuteAgent(Agent):
         # Phase 2: Execute plan
         results_text = []
         for i, step in enumerate(plan):
+            if i >= self.config.max_steps:
+                break
+
             tool_name = step.get("tool")
             args = step.get("arguments", {})
 
@@ -165,6 +168,9 @@ class PlanExecuteAgent(Agent):
         results_text = []
 
         for i, step in enumerate(plan):
+            if i >= self.config.max_steps:
+                break
+
             yield {"event": "step", "data": {"step": i + 1, "total": len(plan)}}
 
             tool_name = step.get("tool")
