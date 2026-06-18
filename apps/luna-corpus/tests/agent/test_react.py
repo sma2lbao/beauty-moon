@@ -1,5 +1,7 @@
 """Tests for ReActAgent."""
+import ast
 import asyncio
+import operator
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +9,43 @@ from app.agent.base import AgentConfig
 from app.agent.modes.react import ReActAgent
 from app.agent.registry import ToolRegistry
 from app.agent.tool import ToolResult, tool
+
+
+def _safe_eval(expression: str) -> str:
+    """Safely evaluate a simple arithmetic expression using AST.
+
+    Only allows numeric constants and basic arithmetic operators.
+    """
+    _ALLOWED_OPS = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.Mod: operator.mod,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    def _eval_node(node):
+        if isinstance(node, ast.Expression):
+            return _eval_node(node.body)
+        if isinstance(node, ast.BinOp):
+            op = _ALLOWED_OPS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op(_eval_node(node.left), _eval_node(node.right))
+        if isinstance(node, ast.UnaryOp):
+            op = _ALLOWED_OPS.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op(_eval_node(node.operand))
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError(f"Unsupported expression element: {type(node).__name__}")
+
+    tree = ast.parse(expression, mode="eval")
+    return str(_eval_node(tree))
 
 
 @pytest.fixture
@@ -35,7 +74,7 @@ def calculator_registry():
 
     @tool(name="calculator", description="Calculate math expressions")
     def calculator(expression: str) -> str:
-        return str(eval(expression))
+        return _safe_eval(expression)
 
     registry.register(calculator)
     return registry

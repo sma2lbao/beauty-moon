@@ -98,9 +98,10 @@ def tool(
         Decorator function
 
     Example:
-        @tool(name="calculator", description="Calculate math")
+        @tool(name="calculator", description="Calculate math expressions safely")
         def calculate(expression: str) -> str:
-            return str(eval(expression))
+            import ast
+            return str(ast.literal_eval(expression))
     """
     def decorator(func: CallableExecutor) -> Tool:
         schema = parameters_schema
