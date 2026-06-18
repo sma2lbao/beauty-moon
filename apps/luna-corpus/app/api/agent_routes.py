@@ -1,18 +1,22 @@
 """Agent API routes."""
 import json
 import time
-from typing import Annotated, Any, AsyncGenerator
+from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.factory import AgentFactory
 from app.agent.registry import ToolRegistry
+from app.agent.tool import Tool
 from app.agent.tools import rag_search_tool, calculator_tool, current_time_tool
 from app.core.config import AgentMode, get_settings
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
+
+# Module-level registry for persisted tool registrations
+_registered_tools: dict[str, Tool] = {}
 
 
 # Request/Response Models
@@ -61,11 +65,13 @@ class ToolRegisterRequest(BaseModel):
 
 
 def get_default_registry() -> ToolRegistry:
-    """Get default tool registry with built-in tools."""
+    """Get default tool registry with built-in tools and persisted registrations."""
     registry = ToolRegistry()
     registry.register(rag_search_tool)
     registry.register(calculator_tool)
     registry.register(current_time_tool)
+    for tool in _registered_tools.values():
+        registry.register(tool)
     return registry
 
 
@@ -217,16 +223,13 @@ async def register_tool(request: ToolRegisterRequest):
     Returns:
         Success message
     """
-    from app.agent.tool import Tool
-
     tool = Tool(
         name=request.name,
         description=request.description,
         parameters_schema=request.parameters_schema,
     )
 
-    # Note: For now, tools are registered in memory only
-    # In production, this would persist to a database
+    _registered_tools[request.name] = tool
 
     return {"message": f"Tool '{request.name}' registered", "name": request.name}
 
