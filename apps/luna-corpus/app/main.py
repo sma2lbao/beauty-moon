@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.api.agent_routes import router as agent_router
 from app.core.config import get_settings
 from app.db.database import init_db
 
@@ -38,6 +39,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(router)
+app.include_router(agent_router)
 
 
 @app.get("/")
