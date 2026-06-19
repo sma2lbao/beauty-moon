@@ -13,7 +13,8 @@
     "nx": "22.7.5",
     "prettier": "^3.8.1",
     "tslib": "^2.3.0",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "2.1.9"
   },
   "workspaces": [
     "apps/*",
