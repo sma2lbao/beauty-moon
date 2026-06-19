@@ -1,6 +1,10 @@
 """Tests for Agent API."""
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
+
+from app.agent.base import AgentResponse
 from app.main import app
 
 
@@ -8,6 +12,23 @@ from app.main import app
 def client():
     """Create test client."""
     return TestClient(app)
+
+
+@pytest.fixture
+def mock_agent():
+    """Mock agent to avoid LLM calls."""
+    mock = AsyncMock()
+    mock.run.return_value = AgentResponse(
+        answer="Mocked response",
+        tool_calls=[],
+        steps=1,
+        latency_ms=100,
+    )
+    mock.run_stream.return_value = AsyncMock()
+    mock.run_stream.return_value.__aiter__.return_value = [
+        {"event": "done", "data": {"answer": "Mocked stream"}},
+    ]
+    return mock
 
 
 def test_list_modes(client):
@@ -52,3 +73,65 @@ def test_invalid_mode(client):
         json={"query": "Hello", "mode": "invalid_mode"},
     )
     assert response.status_code == 400
+
+
+def test_query_empty_tools_uses_default_registry(client):
+    """When available_tools is omitted, default tools should be used."""
+    with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
+        mock_agent = AsyncMock()
+        mock_agent.run.return_value = AgentResponse(
+            answer="ok", tool_calls=[], steps=1, latency_ms=100,
+        )
+        mock_create.return_value = mock_agent
+
+        response = client.post(
+            "/api/v1/agent/query",
+            json={"query": "Hello", "mode": "direct"},
+        )
+        assert response.status_code == 200
+
+        # Verify factory was called with the default (populated) registry
+        call_args = mock_create.call_args
+        registry = call_args.kwargs["tools"]
+        assert len(registry) >= 3, f"Expected >=3 default tools, got {len(registry)}"
+
+
+def test_query_empty_list_sends_empty_registry(client):
+    """When available_tools=[], agent should receive no tools."""
+    with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
+        mock_agent = AsyncMock()
+        mock_agent.run.return_value = AgentResponse(
+            answer="ok", tool_calls=[], steps=1, latency_ms=100,
+        )
+        mock_create.return_value = mock_agent
+
+        response = client.post(
+            "/api/v1/agent/query",
+            json={"query": "Hello", "mode": "direct", "available_tools": []},
+        )
+        assert response.status_code == 200
+
+        call_args = mock_create.call_args
+        registry = call_args.kwargs["tools"]
+        assert len(registry) == 0, f"Expected 0 tools, got {len(registry)}"
+
+
+def test_stream_empty_list_sends_empty_registry(client):
+    """When available_tools=[], stream should also receive no tools."""
+    with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
+        mock_agent = AsyncMock()
+        mock_agent.run_stream.return_value = AsyncMock()
+        mock_agent.run_stream.return_value.__aiter__.return_value = [
+            {"event": "done", "data": {"answer": "ok"}},
+        ]
+        mock_create.return_value = mock_agent
+
+        response = client.post(
+            "/api/v1/agent/stream",
+            json={"query": "Hello", "mode": "direct", "available_tools": []},
+        )
+        assert response.status_code == 200
+
+        call_args = mock_create.call_args
+        registry = call_args.kwargs["tools"]
+        assert len(registry) == 0, f"Expected 0 tools, got {len(registry)}"

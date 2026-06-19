@@ -100,7 +100,7 @@ async def query(
     registry = get_default_registry()
 
     # Filter by available_tools if specified
-    if request.available_tools:
+    if request.available_tools is not None:
         filtered_registry = ToolRegistry()
         for tool_name in request.available_tools:
             tool = registry.get(tool_name)
@@ -174,7 +174,7 @@ async def stream_query(request: AgentQueryRequest):
         raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
 
     registry = get_default_registry()
-    if request.available_tools:
+    if request.available_tools is not None:
         filtered_registry = ToolRegistry()
         for tool_name in request.available_tools:
             tool = registry.get(tool_name)
