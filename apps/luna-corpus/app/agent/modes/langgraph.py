@@ -277,13 +277,17 @@ Provide a clear and helpful answer."""
 
         initial_state = WorkflowState(query=query)
 
+        step_count = 0
+        total_steps = 3  # classify -> handler -> final_response
+
         async for step_output in self.graph.astream(initial_state):
             for step_name, state_dict in step_output.items():
+                step_count += 1
                 yield {
                     "event": "step",
                     "data": {
-                        "step": step_name,
-                        "state": state_dict.get("current_step", ""),
+                        "step": step_count,
+                        "total": total_steps,
                     },
                 }
 
