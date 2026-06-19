@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { api, type AnswerResponse, type StreamEvent, type Source } from '@/lib/api'
+import { api, type AnswerResponse, type Source } from '@/lib/api'
 import { QuestionInput } from '@/components/qa/QuestionInput'
 import { MessageBubble } from '@/components/qa/MessageBubble'
 import { Card } from '@/components/ui/card'
