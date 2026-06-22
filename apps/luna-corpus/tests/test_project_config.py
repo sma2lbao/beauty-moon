@@ -32,4 +32,7 @@ def test_db_revision_target_runs_alembic_autogenerate():
 
     assert target["executor"] == "nx:run-commands"
     assert target["options"]["cwd"] == "{projectRoot}"
-    assert target["options"]["command"] == "uv run alembic -c alembic.ini revision --autogenerate"
+    assert (
+        target["options"]["command"]
+        == "uv run alembic -c alembic.ini revision --autogenerate"
+    )

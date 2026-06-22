@@ -19,6 +19,7 @@ def test_alembic_files_exist():
 
 def test_alembic_env_exposes_model_metadata():
     from unittest.mock import MagicMock, patch
+
     from app.db.models import Base
 
     # alembic.context is a special module that only has 'config' when invoked

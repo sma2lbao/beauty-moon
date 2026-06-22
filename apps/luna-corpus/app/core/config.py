@@ -1,5 +1,5 @@
 """Core configuration for luna-corpus."""
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -8,7 +8,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     """Available LLM providers."""
 
     OLLAMA = "ollama"
@@ -16,7 +16,7 @@ class LLMProvider(str, Enum):
     DOUBAO = "doubao"
 
 
-class AgentMode(str, Enum):
+class AgentMode(StrEnum):
     """Agent execution modes."""
 
     DIRECT = "direct"
@@ -25,7 +25,7 @@ class AgentMode(str, Enum):
     LANGGRAPH = "langgraph"
 
 
-class AppEnv(str, Enum):
+class AppEnv(StrEnum):
     """Application runtime environments."""
 
     DEVELOPMENT = "development"

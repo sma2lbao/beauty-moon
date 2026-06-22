@@ -10,7 +10,9 @@ def test_env_example_documents_runtime_safety_settings():
 
     assert "APP_ENV=development" in env_example
     assert "AUTO_CREATE_TABLES=false" in env_example
-    assert "CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:4200" in env_example
+    assert (
+        "CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:4200" in env_example
+    )
 
 
 def test_readme_documents_migration_commands():
