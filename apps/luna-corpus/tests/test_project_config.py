@@ -14,4 +14,4 @@ def test_test_target_uses_workspace_dev_dependencies():
     target = config["targets"]["test"]
 
     assert target["options"]["cwd"] == "{projectRoot}"
-    assert target["options"]["command"] == "uv run --project ../.. pytest tests/"
+    assert target["options"]["command"] == "uv run --project ../.. pytest"
