@@ -2,8 +2,9 @@
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,14 @@ class AgentMode(str, Enum):
     REACT = "react"
     PLAN = "plan"
     LANGGRAPH = "langgraph"
+
+
+class AppEnv(str, Enum):
+    """Application runtime environments."""
+
+    DEVELOPMENT = "development"
+    TEST = "test"
+    PRODUCTION = "production"
 
 
 class Settings(BaseSettings):
@@ -93,6 +102,20 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
 
+    # Runtime Environment
+    app_env: AppEnv = Field(
+        default=AppEnv.DEVELOPMENT,
+        description="Application runtime environment",
+    )
+    auto_create_tables: bool = Field(
+        default=False,
+        description="Automatically create database tables on startup",
+    )
+    cors_allow_origins: list[str] = Field(
+        default_factory=list,
+        description="Allowed CORS origins",
+    )
+
     # RAG
     retrieval_top_k: int = Field(default=5, description="Number of chunks to retrieve")
 
@@ -120,6 +143,33 @@ class Settings(BaseSettings):
     agent_plan_max_steps: int = Field(
         default=10, description="Max steps in a plan"
     )
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def parse_cors_allow_origins(cls, value: Any) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        if isinstance(value, list):
+            return value
+        raise TypeError("CORS_ALLOW_ORIGINS must be a comma-separated string or list")
+
+    @model_validator(mode="after")
+    def validate_production_safety(self) -> "Settings":
+        if self.app_env != AppEnv.PRODUCTION:
+            return self
+
+        if self.auto_create_tables:
+            raise ValueError("AUTO_CREATE_TABLES must be false in production")
+
+        if not self.cors_allow_origins:
+            raise ValueError("CORS_ALLOW_ORIGINS must be set in production")
+
+        if "*" in self.cors_allow_origins:
+            raise ValueError("Production cannot use wildcard CORS origins")
+
+        return self
 
 
 @lru_cache
