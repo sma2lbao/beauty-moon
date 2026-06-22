@@ -60,7 +60,7 @@
         "{workspaceRoot}/coverage/{projectRoot}"
       ],
       "options": {
-        "command": "uv run pytest tests/",
+        "command": "uv run --project ../.. pytest tests/",
         "cwd": "{projectRoot}"
       },
       "cache": true
