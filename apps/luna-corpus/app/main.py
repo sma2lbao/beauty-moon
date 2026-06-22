@@ -15,37 +15,40 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup
-    init_db()
+    if settings.auto_create_tables:
+        init_db()
     yield
-    # Shutdown
 
 
-app = FastAPI(
-    title="Luna-Corpus API",
-    description="RAG-based Q&A Knowledge Base System",
-    version="1.0.0",
-    lifespan=lifespan,
-)
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application."""
+    app = FastAPI(
+        title="Luna-Corpus API",
+        description="RAG-based Q&A Knowledge Base System",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# Include routers
-app.include_router(router)
-app.include_router(agent_router)
+    app.include_router(router)
+    app.include_router(agent_router)
+
+    @app.get("/")
+    async def root():
+        """Root endpoint."""
+        return {"message": "Luna-Corpus API", "version": "1.0.0"}
+
+    return app
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {"message": "Luna-Corpus API", "version": "1.0.0"}
+app = create_app()
 
 
 if __name__ == "__main__":
@@ -55,5 +58,5 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=True,
+        reload=settings.app_env != "production",
     )
