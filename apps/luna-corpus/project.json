@@ -60,7 +60,7 @@
         "{workspaceRoot}/coverage/{projectRoot}"
       ],
       "options": {
-        "command": "uv run pytest tests/",
+        "command": "uv run --project ../.. pytest",
         "cwd": "{projectRoot}"
       },
       "cache": true
@@ -78,6 +78,20 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "db-migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run alembic -c alembic.ini upgrade head",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "db-revision": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run alembic -c alembic.ini revision --autogenerate",
         "cwd": "{projectRoot}"
       }
     }
