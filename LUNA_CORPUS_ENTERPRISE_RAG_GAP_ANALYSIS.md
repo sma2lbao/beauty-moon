@@ -41,6 +41,334 @@
 | 安全与输入防护 | 缺少速率限制、请求大小限制、Prompt Injection 防护、敏感信息处理 | 企业 RAG 容易面对数据外泄、提示注入、滥用和成本攻击 | `apps/luna-corpus/app/api/routes.py:38` 问题长度限制较基础；未见 rate limit、guardrail、PII 过滤 | 增加 API rate limit、上传大小限制、内容安全扫描、prompt injection 检测、输出引用约束和敏感信息脱敏 |
 | 部署与运行手册 | README 仍是占位描述，缺少环境、依赖、启动、生产部署说明 | 企业交付需要可复现部署、依赖服务说明和故障处理 | `apps/luna-corpus/README.md:1` 只有标题和占位描述；`.env.example` 只有基础配置 | 补 README、Dockerfile/Compose、环境变量说明、服务依赖、健康检查、备份恢复、升级步骤 |
 
+## P0 可实现模块拆分（按依赖拓扑）
+
+以下拆分把 P0 从“能力缺口”转成可实施模块。顺序按依赖拓扑排列：先建立迁移、配置和数据边界，再接入认证权限，然后实现隔离检索、文件摄取、异步索引，最后补齐安全、审计、观测和交付材料。
+
+### P0-M1：迁移与配置底座
+
+**目标**：让后续 schema 变更、生产配置和环境差异可控。
+
+**范围**：
+
+- 引入 Alembic，建立首个 migration baseline。
+- 将生产启动与 `Base.metadata.create_all` 解耦，避免自动建表覆盖迁移流程。
+- 增加环境配置分层：development、test、production。
+- 将 CORS 从 wildcard 改为配置化白名单。
+- 补充数据库、向量库、对象存储、队列等生产环境变量说明。
+
+**不做**：不在本模块改造业务模型字段；只建立迁移和配置承载能力。
+
+**依赖**：无，是所有数据库模型变更的前置模块。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/db/database.py`
+- `apps/luna-corpus/app/core/config.py`
+- `apps/luna-corpus/app/main.py`
+- `apps/luna-corpus/alembic/`
+- `apps/luna-corpus/.env.example`
+
+**验收标准**：
+
+- 本地可通过 Alembic 创建当前表结构。
+- 生产配置下应用不会自动执行 `create_all`。
+- CORS 允许来源来自环境变量，不再硬编码 `allow_origins=["*"]`。
+- README 或环境说明列出必需配置项。
+
+**建议测试**：
+
+- 迁移命令可在空数据库上成功执行。
+- 配置加载测试覆盖 development/test/production。
+- FastAPI app 初始化测试验证 CORS 配置生效。
+
+### P0-M2：租户 / 工作区 / 知识库数据模型
+
+**目标**：建立企业知识隔离边界，让所有文档、会话、chunk 和向量记录都可归属到明确的租户和知识库。
+
+**范围**：
+
+- 新增 `Tenant`、`Workspace`、`KnowledgeBase` 模型。
+- `Document` 绑定 `knowledge_base_id`，并可通过知识库追溯到 workspace 和 tenant。
+- `Chunk` 继承 document 的知识库归属，并在向量 metadata 中写入隔离键。
+- `Conversation` 绑定 workspace 或 knowledge base，避免跨空间复用上下文。
+- API 层支持创建和查询基础租户、工作区、知识库。
+
+**不做**：不实现复杂组织架构同步和部门树；先实现应用内最小组织模型。
+
+**依赖**：依赖 P0-M1 的 migration 能力。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/db/models.py`
+- `apps/luna-corpus/app/api/routes.py`
+- `apps/luna-corpus/app/db/vectorstore.py`
+- `apps/luna-corpus/app/services/document_processor.py`
+- Alembic migration 文件
+
+**验收标准**：
+
+- 新建文档必须归属到一个知识库。
+- chunk 和向量 metadata 都包含 `tenant_id`、`workspace_id`、`knowledge_base_id`。
+- 查询文档、会话、chunk 时不会返回其他知识库的数据。
+- 旧的纯文档创建路径被替换或兼容到默认知识库。
+
+**建议测试**：
+
+- 模型关系测试覆盖 tenant → workspace → knowledge base → document → chunk。
+- 文档列表测试验证知识库过滤。
+- 向量写入测试验证 metadata 包含隔离字段。
+
+### P0-M3：认证与 RBAC 权限
+
+**目标**：确保所有企业知识操作都能回答“谁在访问、是否有权限”。
+
+**范围**：
+
+- 引入 JWT 或 OIDC 兼容认证依赖，API 获取 `current_user`。
+- 新增用户与 membership 模型，支持 workspace 或 knowledge base 级别角色。
+- 实现最小角色集：owner、admin、member、viewer。
+- 对文档 CRUD、process、QA、multi-turn QA、conversation API 增加权限校验。
+- 对 Agent RAG search tool 加权限上下文，避免绕过 API 权限。
+
+**不做**：不接入复杂企业 SSO 目录同步；先预留 external_user_id/provider 字段。
+
+**依赖**：依赖 P0-M2 的租户、工作区、知识库边界。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/api/routes.py`
+- `apps/luna-corpus/app/api/agent_routes.py`
+- `apps/luna-corpus/app/agent/tools/rag_search.py`
+- `apps/luna-corpus/app/db/models.py`
+- 新增 `apps/luna-corpus/app/security/` 或 `apps/luna-corpus/app/auth/`
+
+**验收标准**：
+
+- 未认证请求不能访问文档、会话、问答和索引接口。
+- viewer 只能读和问答，不能写入、删除或触发索引。
+- member 可写入自己有权限的知识库。
+- admin/owner 可管理 membership 和知识库设置。
+- Agent 工具检索不能返回当前用户无权访问的文档。
+
+**建议测试**：
+
+- API 权限矩阵测试覆盖匿名、viewer、member、admin、owner。
+- 跨知识库访问测试必须返回 403 或空结果。
+- Agent RAG tool 测试验证权限上下文生效。
+
+### P0-M4：检索隔离与向量库生产化
+
+**目标**：让检索链路严格遵守知识边界，并为生产向量库部署留出替换空间。
+
+**范围**：
+
+- `search_vectorstore` 支持 metadata filter。
+- RAG graph 和 streaming RAG 入口传入 tenant/workspace/knowledge base 上下文。
+- Source 返回前再次校验权限，避免 metadata 漏配导致越权引用。
+- 将 Chroma client 初始化抽象成可配置 backend：本地 PersistentClient、Chroma Server，后续可扩展 pgvector/Qdrant/Milvus。
+- 补充向量库备份、重建索引和集合命名策略说明。
+
+**不做**：不在 P0 同时实现 pgvector、Qdrant、Milvus 多后端；只保留清晰接口和 Chroma server 路径。
+
+**依赖**：依赖 P0-M2 的隔离键和 P0-M3 的权限上下文。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/db/vectorstore.py`
+- `apps/luna-corpus/app/graph/rag_graph.py`
+- `apps/luna-corpus/app/agent/tools/rag_search.py`
+- `apps/luna-corpus/app/core/config.py`
+
+**验收标准**：
+
+- 所有 QA API 都必须带知识库上下文或能从 conversation 推导上下文。
+- 向量查询使用 `knowledge_base_id` filter。
+- 不同知识库存在相似内容时，检索结果只来自当前知识库。
+- 向量库 backend 可通过配置选择本地或服务端 Chroma。
+
+**建议测试**：
+
+- 两个知识库写入相同 chunk，检索只能返回当前知识库结果。
+- streaming 和非 streaming QA 都覆盖隔离测试。
+- backend 配置测试覆盖 local/server 初始化路径。
+
+### P0-M5：文件摄取与解析管线
+
+**目标**：让知识进入系统不再依赖手工粘贴纯文本，支持企业试点常见文件类型。
+
+**范围**：
+
+- 增加文件上传 API，记录文件名、mime type、size、hash、storage path。
+- 支持 PDF、DOCX、Markdown、HTML 到文本的解析。
+- 将解析结果转为 `Document`，保留 source metadata。
+- 对解析失败记录错误原因。
+- 为后续 OCR、网页抓取、企业系统连接器预留 parser 接口。
+
+**不做**：不在 P0 做图片 OCR、Confluence/飞书/钉钉连接器和网页爬虫。
+
+**依赖**：依赖 P0-M2 的知识库归属；建议在 P0-M6 前先定义解析产物结构。
+
+**主要改动点**：
+
+- 新增 `apps/luna-corpus/app/services/ingestion/`
+- `apps/luna-corpus/app/api/routes.py`
+- `apps/luna-corpus/app/db/models.py`
+- `apps/luna-corpus/pyproject.toml`
+- `apps/luna-corpus/.env.example`
+
+**验收标准**：
+
+- 用户可上传 PDF/DOCX/Markdown/HTML 文件到指定知识库。
+- 系统能生成对应 Document，并保留文件来源和 hash。
+- 不支持的文件类型被拒绝并返回明确错误。
+- 解析失败不会产生半完成索引。
+
+**建议测试**：
+
+- 每种支持文件类型至少一个 fixture 测试。
+- 文件大小、mime type、空文件、损坏文件测试。
+- 重复文件 hash 测试验证不会重复导入或能明确处理冲突。
+
+### P0-M6：异步索引任务
+
+**目标**：把解析、切分、embedding、写向量库从 API 请求链路中拆出，支持批量任务、状态查询和失败重试。
+
+**范围**：
+
+- 新增 `IndexTask` 或 `Job` 模型，记录状态：queued、running、completed、failed、retrying。
+- 文档创建或文件上传后返回任务 ID。
+- Worker 执行 parse、chunk、embedding、vector upsert。
+- 记录 started_at、finished_at、error_message、retry_count。
+- 增加任务查询、重试、取消接口。
+
+**不做**：不在 P0 设计复杂 DAG 编排；单文档单任务即可。
+
+**依赖**：依赖 P0-M5 的解析入口；依赖 P0-M4 的向量写入能力；依赖 P0-M1 的配置承载队列参数。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/services/document_processor.py`
+- 新增 `apps/luna-corpus/app/services/jobs/`
+- `apps/luna-corpus/app/api/routes.py`
+- `apps/luna-corpus/app/db/models.py`
+- `apps/luna-corpus/project.json`
+- `apps/luna-corpus/.env.example`
+
+**验收标准**：
+
+- 文档处理接口不再阻塞等待 embedding 完成。
+- 用户可查询任务状态和失败原因。
+- 失败任务可重试，并不会留下重复 chunk 或重复向量。
+- Worker 可独立启动。
+
+**建议测试**：
+
+- job 状态流转测试覆盖 queued → running → completed 和 queued → running → failed。
+- 重试测试验证旧 chunk/vector 被正确清理或幂等覆盖。
+- API 测试验证创建任务后立即返回任务 ID。
+
+### P0-M7：安全防护与审计
+
+**目标**：降低企业知识泄露、接口滥用和不可追责风险。
+
+**范围**：
+
+- 增加 rate limit 和请求体大小限制。
+- 上传文件类型和大小白名单。
+- 基础 prompt injection 检测：识别要求忽略系统指令、导出全部上下文、越权读取等高风险模式。
+- 对敏感字段和日志做脱敏。
+- 新增审计日志：登录主体、操作类型、资源类型、资源 ID、结果、时间、IP/request_id。
+
+**不做**：不在 P0 建完整 DLP 平台或复杂内容安全模型。
+
+**依赖**：依赖 P0-M3 的用户身份；与 P0-M5/P0-M6 并行推进。
+
+**主要改动点**：
+
+- 新增 `apps/luna-corpus/app/security/`
+- `apps/luna-corpus/app/main.py`
+- `apps/luna-corpus/app/api/routes.py`
+- `apps/luna-corpus/app/services/llm.py`
+- `apps/luna-corpus/app/db/models.py`
+
+**验收标准**：
+
+- 超过请求频率限制会返回 429。
+- 超过大小限制或不支持类型的上传会被拒绝。
+- 高风险 prompt injection 请求会被拦截或标记，并写入审计。
+- 文档创建、删除、索引、问答均有审计记录。
+
+**建议测试**：
+
+- rate limit 测试覆盖正常请求和超限请求。
+- 上传安全测试覆盖类型、大小、空内容。
+- prompt injection 规则测试覆盖允许、告警、拒绝三类结果。
+- 审计日志测试验证关键字段完整。
+
+### P0-M8：可观测性与运维交付
+
+**目标**：让企业试点环境可部署、可排障、可度量、可恢复。
+
+**范围**：
+
+- 增加 request_id middleware 和结构化日志。
+- 增加基础 metrics：请求数、错误率、响应时间、检索耗时、embedding 耗时、LLM 耗时、索引任务耗时。
+- 健康检查区分 API、数据库、向量库、队列、LLM provider。
+- 补充 README：本地启动、依赖服务、环境变量、迁移、worker、测试、部署。
+- 提供 Dockerfile 和 docker-compose，包含 API、MySQL、Chroma server、Redis/队列 worker 的最小拓扑。
+- 补充备份恢复和索引重建说明。
+
+**不做**：不在 P0 建完整 Grafana dashboard 和告警体系；先暴露 metrics 和日志字段。
+
+**依赖**：依赖 P0-M1 的配置；观测埋点可随 P0-M4/P0-M6 增量接入。
+
+**主要改动点**：
+
+- `apps/luna-corpus/app/main.py`
+- `apps/luna-corpus/app/services/llm.py`
+- `apps/luna-corpus/app/db/vectorstore.py`
+- `apps/luna-corpus/README.md`
+- `apps/luna-corpus/project.json`
+- 新增 Docker/Compose 相关文件
+
+**验收标准**：
+
+- 每个请求日志都包含 request_id、user_id、tenant_id、path、status、latency。
+- metrics endpoint 可被 Prometheus 抓取。
+- health endpoint 能区分依赖组件状态。
+- 新开发者可按 README 启动 API、worker 和依赖服务。
+- 有明确的数据库备份、向量索引重建步骤。
+
+**建议测试**：
+
+- middleware 测试验证 request_id 透传。
+- health check 测试覆盖依赖正常和异常。
+- metrics endpoint 测试验证关键指标存在。
+- 文档命令至少经过一次本地验证。
+
+### P0 模块依赖关系
+
+| 模块 | 依赖 | 可并行性 |
+| --- | --- | --- |
+| P0-M1 迁移与配置底座 | 无 | 必须最先做 |
+| P0-M2 租户 / 工作区 / 知识库数据模型 | P0-M1 | 与 P0-M8 的文档初稿可并行 |
+| P0-M3 认证与 RBAC 权限 | P0-M2 | 可与 P0-M5 的 parser spike 并行 |
+| P0-M4 检索隔离与向量库生产化 | P0-M2、P0-M3 | 可与 P0-M5 并行，但最终需接权限上下文 |
+| P0-M5 文件摄取与解析管线 | P0-M2 | 可先实现 parser，再接异步任务 |
+| P0-M6 异步索引任务 | P0-M1、P0-M4、P0-M5 | 依赖较多，建议中后段实施 |
+| P0-M7 安全防护与审计 | P0-M3 | 可分批接入，审计依赖用户身份 |
+| P0-M8 可观测性与运维交付 | P0-M1 | 可贯穿全程增量完善 |
+
+### P0 建议实施批次
+
+1. **Batch 1：基础边界** — P0-M1、P0-M2。
+2. **Batch 2：访问控制** — P0-M3、P0-M4 的检索隔离部分。
+3. **Batch 3：知识进入系统** — P0-M5、P0-M6。
+4. **Batch 4：生产兜底** — P0-M7、P0-M8，以及 P0-M4 的向量库生产化说明。
+
+完成 P0 后，系统应达到企业内部试点标准：用户和知识库有明确边界，文档可通过文件进入系统，索引链路异步可追踪，检索不会跨权限泄露，运行状态可观测，部署和恢复路径可复现。
+
 ## P1：规模化运营需要补齐的模块
 
 | 模块 | 缺口 | 价值 | 当前证据 | 建议落地方式 |
