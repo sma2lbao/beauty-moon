@@ -1,5 +1,6 @@
 """Tests for Alembic migration configuration."""
 
+import re
 from pathlib import Path
 
 
@@ -48,9 +49,6 @@ def test_initial_migration_defines_current_tables():
     migration_source = migration_path.read_text()
 
     for table_name in ["documents", "chunks", "conversations", "messages"]:
-        # normalize whitespace: create_table(\n    "table" -> create_table("table"
-        assert (
-            f'create_table("{table_name}"' in migration_source
-            or f'create_table(\n' in migration_source
-            and f'"{table_name}"' in migration_source
-        )
+        assert re.search(
+            rf'create_table\(\s*"{table_name}"', migration_source
+        ), f"create_table call for '{table_name}' not found in migration"
