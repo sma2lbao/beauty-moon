@@ -1,12 +1,14 @@
 """Tenant, workspace, and knowledge-base API routes."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.api.auth import AuthenticatedRequestContext, require_permission
+from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
-from app.db.models import KnowledgeBase, Tenant, Workspace
+from app.db.models import KnowledgeBase, Tenant, User, Workspace, WorkspaceMembership
 
 router = APIRouter(prefix="/api/v1", tags=["tenants"])
 
@@ -84,8 +86,31 @@ def create_tenant(
 
 
 @router.get("/tenants", response_model=TenantListResponse)
-def list_tenants(db: Annotated[Session, Depends(get_db)]) -> TenantListResponse:
-    tenants = db.query(Tenant).order_by(Tenant.created_at.desc()).all()
+def list_tenants(
+    db: Annotated[Session, Depends(get_db)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+) -> TenantListResponse:
+    if not x_user_id:
+        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
+
+    user = db.query(User).filter(User.id == x_user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is inactive")
+
+    tenants = (
+        db.query(Tenant)
+        .join(Workspace)
+        .join(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.is_active == True,
+        )
+        .distinct()
+        .order_by(Tenant.created_at.desc())
+        .all()
+    )
     return TenantListResponse(tenants=tenants, total=len(tenants))
 
 
@@ -117,8 +142,25 @@ def create_workspace(
 def list_workspaces(
     db: Annotated[Session, Depends(get_db)],
     tenant_id: str | None = Query(default=None),
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
 ) -> WorkspaceListResponse:
-    query = db.query(Workspace)
+    if not x_user_id:
+        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
+
+    user = db.query(User).filter(User.id == x_user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is inactive")
+
+    query = (
+        db.query(Workspace)
+        .join(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.is_active == True,
+        )
+    )
     if tenant_id:
         query = query.filter(Workspace.tenant_id == tenant_id)
     workspaces = query.order_by(Workspace.created_at.desc()).all()
@@ -133,6 +175,10 @@ def list_workspaces(
 def create_knowledge_base(
     knowledge_base: KnowledgeBaseCreate,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.KNOWLEDGE_BASE_MANAGE)),
+    ],
 ) -> KnowledgeBaseResponse:
     workspace = (
         db.query(Workspace)
@@ -140,6 +186,9 @@ def create_knowledge_base(
         .first()
     )
     if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    if workspace.id != context.workspace.id:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     db_knowledge_base = KnowledgeBase(
@@ -157,11 +206,15 @@ def create_knowledge_base(
 @router.get("/knowledge-bases", response_model=KnowledgeBaseListResponse)
 def list_knowledge_bases(
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.KNOWLEDGE_BASE_READ)),
+    ],
     workspace_id: str | None = Query(default=None),
 ) -> KnowledgeBaseListResponse:
-    query = db.query(KnowledgeBase)
-    if workspace_id:
-        query = query.filter(KnowledgeBase.workspace_id == workspace_id)
+    query = db.query(KnowledgeBase).filter(KnowledgeBase.workspace_id == context.workspace.id)
+    if workspace_id and workspace_id != context.workspace.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     knowledge_bases = query.order_by(KnowledgeBase.created_at.desc()).all()
     return KnowledgeBaseListResponse(
         knowledge_bases=knowledge_bases,
