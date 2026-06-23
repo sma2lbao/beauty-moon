@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent_routes import router as agent_router
 from app.api.routes import router
+from app.api.tenant_routes import router as tenant_router
 from app.core.config import get_settings
 from app.db.database import init_db
 
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
     app.include_router(agent_router)
+    app.include_router(tenant_router)
 
     @app.get("/")
     async def root():
