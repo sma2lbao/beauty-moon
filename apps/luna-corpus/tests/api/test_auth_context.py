@@ -30,7 +30,9 @@ def db_session():
     engine.dispose()
 
 
-def create_auth_records(db_session, *, user_active=True, membership_active=True, permission_slugs=None):
+def create_auth_records(
+    db_session, *, user_active=True, membership_active=True, permission_slugs=None
+):
     permission_slugs = permission_slugs or [PermissionSlug.DOCUMENT_READ]
     tenant = Tenant(name="Acme", slug="acme")
     workspace = Workspace(name="Research", slug="research", tenant=tenant)
@@ -187,13 +189,17 @@ def test_get_authenticated_context_returns_effective_permissions(db_session):
     assert context.workspace == workspace
     assert context.knowledge_base == knowledge_base
     assert context.membership == membership
-    assert context.permissions == frozenset({PermissionSlug.DOCUMENT_READ, PermissionSlug.QA_QUERY})
+    assert context.permissions == frozenset(
+        {PermissionSlug.DOCUMENT_READ, PermissionSlug.QA_QUERY}
+    )
 
 
 def test_get_authenticated_context_rejects_cross_workspace_access(db_session):
     tenant, workspace, knowledge_base, user, _ = create_auth_records(db_session)
     other_workspace = Workspace(name="Other", slug="other", tenant=tenant)
-    other_knowledge_base = KnowledgeBase(name="Other Docs", slug="other-docs", workspace=other_workspace)
+    other_knowledge_base = KnowledgeBase(
+        name="Other Docs", slug="other-docs", workspace=other_workspace
+    )
     db_session.add(other_knowledge_base)
     db_session.commit()
 

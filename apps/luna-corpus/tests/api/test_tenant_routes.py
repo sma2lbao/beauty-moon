@@ -8,7 +8,14 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
-from app.db.models import Base, KnowledgeBase, Permission, Role, User, WorkspaceMembership
+from app.db.models import (
+    Base,
+    KnowledgeBase,
+    Permission,
+    Role,
+    User,
+    WorkspaceMembership,
+)
 from app.main import create_app
 
 
@@ -47,8 +54,12 @@ def create_user_with_role(client, workspace_id, role_slug, permission_slugs):
             if not permission:
                 permission = Permission(name=slug, slug=slug, description=slug)
             permissions.append(permission)
-        role = Role(name=role_slug, slug=role_slug, is_system=True, permissions=permissions)
-        membership = WorkspaceMembership(user=user, workspace_id=workspace_id, roles=[role])
+        role = Role(
+            name=role_slug, slug=role_slug, is_system=True, permissions=permissions
+        )
+        membership = WorkspaceMembership(
+            user=user, workspace_id=workspace_id, roles=[role]
+        )
         db.add(membership)
         db.commit()
         return user.id
@@ -123,12 +134,16 @@ def test_create_workspace_is_bootstrap_only_but_list_requires_user(client):
 
 
 def test_tenant_and_workspace_lists_only_return_user_memberships(client):
-    tenant_one = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    tenant_one = client.post(
+        "/api/v1/tenants", json={"name": "Acme", "slug": "acme"}
+    ).json()
     workspace_one = client.post(
         "/api/v1/workspaces",
         json={"tenant_id": tenant_one["id"], "name": "Research", "slug": "research"},
     ).json()
-    tenant_two = client.post("/api/v1/tenants", json={"name": "Other", "slug": "other"}).json()
+    tenant_two = client.post(
+        "/api/v1/tenants", json={"name": "Other", "slug": "other"}
+    ).json()
     client.post(
         "/api/v1/workspaces",
         json={"tenant_id": tenant_two["id"], "name": "Private", "slug": "private"},
@@ -175,12 +190,17 @@ def test_create_knowledge_base_requires_manage_permission(client):
 
     response = client.post(
         "/api/v1/knowledge-bases",
-        headers=context_headers(reader_id, tenant["id"], workspace["id"], bootstrap_kb["id"]),
+        headers=context_headers(
+            reader_id, tenant["id"], workspace["id"], bootstrap_kb["id"]
+        ),
         json={"workspace_id": workspace["id"], "name": "Docs", "slug": "docs"},
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Missing required permission: knowledge_base:manage"
+    assert (
+        response.json()["detail"]
+        == "Missing required permission: knowledge_base:manage"
+    )
 
 
 def test_workspace_admin_can_create_and_list_knowledge_bases(client):
@@ -207,12 +227,16 @@ def test_workspace_admin_can_create_and_list_knowledge_bases(client):
 
     created = client.post(
         "/api/v1/knowledge-bases",
-        headers=context_headers(admin_id, tenant["id"], workspace["id"], bootstrap_kb["id"]),
+        headers=context_headers(
+            admin_id, tenant["id"], workspace["id"], bootstrap_kb["id"]
+        ),
         json={"workspace_id": workspace["id"], "name": "Docs", "slug": "docs"},
     )
     listed = client.get(
         f"/api/v1/knowledge-bases?workspace_id={workspace['id']}",
-        headers=context_headers(admin_id, tenant["id"], workspace["id"], bootstrap_kb["id"]),
+        headers=context_headers(
+            admin_id, tenant["id"], workspace["id"], bootstrap_kb["id"]
+        ),
     )
 
     assert created.status_code == 201

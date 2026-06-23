@@ -8,7 +8,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
-from app.db.models import Base, KnowledgeBase, Permission, Role, Tenant, User, Workspace, WorkspaceMembership
+from app.db.models import (
+    Base,
+    KnowledgeBase,
+    Permission,
+    Role,
+    Tenant,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
 from app.main import create_app
 
 
@@ -65,12 +74,18 @@ def create_user_with_permissions(Session, workspace_id, label, permission_slugs)
         user = User(email=f"{label}@example.com", display_name=label)
         permissions = []
         for slug in permission_slugs:
-            permission = session.query(Permission).filter(Permission.slug == slug).first()
+            permission = (
+                session.query(Permission).filter(Permission.slug == slug).first()
+            )
             if not permission:
                 permission = Permission(name=slug, slug=slug, description=slug)
             permissions.append(permission)
-        role = Role(name=label, slug=label, is_system=True, permissions=permissions)
-        membership = WorkspaceMembership(user=user, workspace_id=workspace_id, roles=[role])
+        role = Role(
+            name=label, slug=label, is_system=True, permissions=permissions
+        )
+        membership = WorkspaceMembership(
+            user=user, workspace_id=workspace_id, roles=[role]
+        )
         session.add(membership)
         session.commit()
         return user.id
@@ -148,7 +163,11 @@ def test_document_reader_cannot_create_or_delete_documents(client, app_db):
         Session,
         context["workspace_id"],
         "document_editor_for_reader_test",
-        [PermissionSlug.DOCUMENT_READ, PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_DELETE],
+        [
+            PermissionSlug.DOCUMENT_READ,
+            PermissionSlug.DOCUMENT_WRITE,
+            PermissionSlug.DOCUMENT_DELETE,
+        ],
     )
     created = client.post(
         "/api/v1/documents",
@@ -167,9 +186,15 @@ def test_document_reader_cannot_create_or_delete_documents(client, app_db):
     )
 
     assert create_response.status_code == 403
-    assert create_response.json()["detail"] == "Missing required permission: document:write"
+    assert (
+        create_response.json()["detail"]
+        == "Missing required permission: document:write"
+    )
     assert delete_response.status_code == 403
-    assert delete_response.json()["detail"] == "Missing required permission: document:delete"
+    assert (
+        delete_response.json()["detail"]
+        == "Missing required permission: document:delete"
+    )
 
 
 def test_document_write_permission_allows_processing(client, app_db):
