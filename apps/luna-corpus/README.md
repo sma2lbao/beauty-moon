@@ -43,6 +43,28 @@ pnpm nx run luna-corpus:db-revision
 
 Review generated revisions before committing them.
 
+## Tenant and knowledge-base context
+
+P0-M2 scopes documents, conversations, and RAG retrieval by knowledge base. Create the hierarchy first:
+
+```bash
+POST /api/v1/tenants
+POST /api/v1/workspaces
+POST /api/v1/knowledge-bases
+```
+
+Knowledge-base scoped endpoints require these headers:
+
+```http
+X-Tenant-Id: <tenant-id>
+X-Workspace-Id: <workspace-id>
+X-Knowledge-Base-Id: <knowledge-base-id>
+```
+
+The headers provide temporary request context only. They are not authentication or authorization credentials.
+
+The scoped endpoints include document creation/listing/detail/deletion/processing, single-turn QA, streaming QA, conversations, and multi-turn QA. Requests using a document or conversation from another knowledge base return `404`.
+
 ## Local development
 
 Start the API from the repository root:

@@ -22,3 +22,13 @@ def test_readme_documents_migration_commands():
     assert "pnpm nx run luna-corpus:serve" in readme
     assert "AUTO_CREATE_TABLES=false" in readme
     assert "APP_ENV=production" in readme
+
+
+def test_readme_documents_knowledge_base_context_headers():
+    readme = (PROJECT_ROOT / "README.md").read_text()
+
+    assert "X-Tenant-Id" in readme
+    assert "X-Workspace-Id" in readme
+    assert "X-Knowledge-Base-Id" in readme
+    assert "POST /api/v1/tenants" in readme
+    assert "POST /api/v1/knowledge-bases" in readme
