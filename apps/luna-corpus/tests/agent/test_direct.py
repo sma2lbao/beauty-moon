@@ -1,7 +1,9 @@
 """Tests for DirectAgent."""
+
 import asyncio
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.agent.base import AgentConfig
 from app.agent.modes.direct import DirectAgent
@@ -86,7 +88,10 @@ class TestDirectAgentWithToolCall:
         with patch("app.agent.modes.direct.get_chat_model") as mock:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
-                content='TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Beijing"}}'
+                content=(
+                    'TOOL_CALL: {"name": "get_weather", '
+                    '"arguments": {"city": "Beijing"}}'
+                )
             )
             mock.return_value = chat
 
@@ -105,9 +110,10 @@ class TestDirectAgentWithToolCall:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
                 content=(
-                    'Let me check the weather.\n'
-                    'TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Shanghai"}}\n'
-                    'Getting weather data...'
+                    "Let me check the weather.\n"
+                    'TOOL_CALL: {"name": "get_weather", '
+                    '"arguments": {"city": "Shanghai"}}\n'
+                    "Getting weather data..."
                 )
             )
             mock.return_value = chat
@@ -294,7 +300,9 @@ class TestDirectAgentRunStream:
         with patch("app.agent.modes.direct.get_chat_model") as mock:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
-                content='TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Paris"}}'
+                content=(
+                    'TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Paris"}}'
+                )
             )
             mock.return_value = chat
 
@@ -390,7 +398,9 @@ class TestDirectAgentEdgeCases:
         with patch("app.agent.modes.direct.get_chat_model") as mock:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
-                content='TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Tokyo"}}'
+                content=(
+                    'TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Tokyo"}}'
+                )
             )
             mock.return_value = chat
 

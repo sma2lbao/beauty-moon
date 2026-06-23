@@ -1,7 +1,10 @@
 """Tests for PlanExecuteAgent."""
+
 import json
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from app.agent.base import AgentConfig
 from app.agent.modes.plan_execute import PlanExecuteAgent
 from app.agent.registry import ToolRegistry
@@ -12,7 +15,9 @@ def test_plan_parse():
     """Test parsing plan JSON."""
     agent = PlanExecuteAgent(AgentConfig())
 
-    response = '[{"tool": "calculator", "arguments": {"a": 1}}, {"tool": "final_answer"}]'
+    response = (
+        '[{"tool": "calculator", "arguments": {"a": 1}}, {"tool": "final_answer"}]'
+    )
     plan = agent._parse_plan(response)
     assert plan is not None
     assert len(plan) == 2
@@ -44,28 +49,32 @@ async def test_plan_max_steps():
     """Test PlanExecute enforces max_steps during execution."""
     # Register tools that return simple results
     registry = ToolRegistry()
-    registry.register(Tool(
-        name="step_tool",
-        description="A test step tool",
-        parameters_schema={
-            "type": "object",
-            "properties": {"value": {"type": "string"}},
-        },
-        executor=lambda value: f"result:{value}",
-    ))
+    registry.register(
+        Tool(
+            name="step_tool",
+            description="A test step tool",
+            parameters_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            executor=lambda value: f"result:{value}",
+        )
+    )
 
     agent = PlanExecuteAgent(AgentConfig(max_steps=2, tools=registry))
     assert agent.config.max_steps == 2
 
     # Mock LLM: plan with 5 steps, none are final_answer
     mock_plan = MagicMock()
-    mock_plan.content = json.dumps([
-        {"tool": "step_tool", "arguments": {"value": "a"}, "reasoning": "step 1"},
-        {"tool": "step_tool", "arguments": {"value": "b"}, "reasoning": "step 2"},
-        {"tool": "step_tool", "arguments": {"value": "c"}, "reasoning": "step 3"},
-        {"tool": "step_tool", "arguments": {"value": "d"}, "reasoning": "step 4"},
-        {"tool": "step_tool", "arguments": {"value": "e"}, "reasoning": "step 5"},
-    ])
+    mock_plan.content = json.dumps(
+        [
+            {"tool": "step_tool", "arguments": {"value": "a"}, "reasoning": "step 1"},
+            {"tool": "step_tool", "arguments": {"value": "b"}, "reasoning": "step 2"},
+            {"tool": "step_tool", "arguments": {"value": "c"}, "reasoning": "step 3"},
+            {"tool": "step_tool", "arguments": {"value": "d"}, "reasoning": "step 4"},
+            {"tool": "step_tool", "arguments": {"value": "e"}, "reasoning": "step 5"},
+        ]
+    )
     mock_final = MagicMock()
     mock_final.content = "All done"
 

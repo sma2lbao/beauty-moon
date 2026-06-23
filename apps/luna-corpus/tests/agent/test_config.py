@@ -1,5 +1,6 @@
 """Tests for agent configuration."""
-from app.core.config import AgentMode, Settings, get_settings
+
+from app.core.config import AgentMode, Settings
 
 
 def test_agent_mode_enum():

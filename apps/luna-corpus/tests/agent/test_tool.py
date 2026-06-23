@@ -1,6 +1,8 @@
 """Tests for tool definitions."""
+
 import pytest
-from app.agent.tool import Tool, tool, ToolResult
+
+from app.agent.tool import Tool, ToolResult, tool
 
 
 def test_tool_result_success():
@@ -53,6 +55,7 @@ def test_tool_get_schema():
 
 def test_tool_decorator_sync():
     """Test @tool decorator for sync function."""
+
     @tool(name="calculator", description="Calculate math")
     def calculate(expression: str) -> str:
         return str(eval(expression))
@@ -64,6 +67,7 @@ def test_tool_decorator_sync():
 
 def test_tool_decorator_async():
     """Test @tool decorator for async function."""
+
     @tool(name="async_tool", description="An async tool")
     async def async_tool(query: str) -> str:
         return f"Async result: {query}"
@@ -74,6 +78,7 @@ def test_tool_decorator_async():
 
 def test_tool_execute_sync():
     """Test executing a sync tool."""
+
     @tool(name="greet", description="Greet someone")
     def greet(name: str) -> str:
         return f"Hello, {name}!"
@@ -87,6 +92,7 @@ def test_tool_execute_sync():
 @pytest.mark.asyncio
 async def test_tool_execute_async():
     """Test executing an async tool."""
+
     @tool(name="async_greet", description="Async greet")
     async def async_greet(name: str) -> str:
         return f"Hello, {name}!"
@@ -100,6 +106,7 @@ async def test_tool_execute_async():
 @pytest.mark.asyncio
 async def test_tool_execute_error():
     """Test tool execution error handling."""
+
     @tool(name="failing", description="A failing tool")
     def failing_tool() -> str:
         raise ValueError("Intentional error")

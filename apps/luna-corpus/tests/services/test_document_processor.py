@@ -1,4 +1,5 @@
 """Tests for document processor."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,8 +16,13 @@ def processor():
 
 def test_detect_content_type_code(processor):
     """Test detecting code content."""
-    assert processor.detect_content_type("```python\ndef hello():\n    pass\n```") == ContentType.CODE
-    assert processor.detect_content_type("def main():\n    return 0") == ContentType.CODE
+    assert (
+        processor.detect_content_type("```python\ndef hello():\n    pass\n```")
+        == ContentType.CODE
+    )
+    assert (
+        processor.detect_content_type("def main():\n    return 0") == ContentType.CODE
+    )
 
 
 def test_detect_content_type_table(processor):
@@ -65,7 +71,7 @@ def test_process_document(mock_add_vectors, mock_embed_texts):
 
     mock_embed_texts.return_value = [[0.1, 0.2, 0.3]]
 
-    chunks = processor.process_document(mock_db, "doc-1")
+    processor.process_document(mock_db, "doc-1")
 
     assert mock_doc.status == ContentStatus.COMPLETED
     mock_db.add.assert_called()

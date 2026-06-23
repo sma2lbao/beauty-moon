@@ -6,10 +6,13 @@ from app.graph import rag_graph
 
 
 def test_retrieve_node_passes_knowledge_base_filter():
-    with patch("app.graph.rag_graph.embed_text", return_value=[0.1]), patch(
-        "app.graph.rag_graph.search_vectorstore",
-        return_value=[],
-    ) as search:
+    with (
+        patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
+        patch(
+            "app.graph.rag_graph.search_vectorstore",
+            return_value=[],
+        ) as search,
+    ):
         rag_graph.retrieve_node({"question": "What?", "knowledge_base_id": "kb-1"})
 
     search.assert_called_once_with(

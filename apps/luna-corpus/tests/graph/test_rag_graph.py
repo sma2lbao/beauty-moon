@@ -1,4 +1,5 @@
 """Tests for LangGraph RAG flow."""
+
 from unittest.mock import patch
 
 
@@ -17,15 +18,21 @@ def test_retrieve_node():
         }
     ]
 
-    with patch("app.graph.rag_graph.embed_text", return_value=mock_embedding):
-        with patch(
-            "app.graph.rag_graph.search_vectorstore", return_value=mock_results
-        ):
-            state = RAGState(question="test question", retrieved_docs=[], answer=None, sources=[], processing_time_ms=None)
-            result = retrieve_node(state)
+    with (
+        patch("app.graph.rag_graph.embed_text", return_value=mock_embedding),
+        patch("app.graph.rag_graph.search_vectorstore", return_value=mock_results),
+    ):
+        state = RAGState(
+            question="test question",
+            retrieved_docs=[],
+            answer=None,
+            sources=[],
+            processing_time_ms=None,
+        )
+        result = retrieve_node(state)
 
-            assert "retrieved_docs" in result
-            assert len(result["retrieved_docs"]) == 1
+        assert "retrieved_docs" in result
+        assert len(result["retrieved_docs"]) == 1
 
 
 def test_generate_node():
@@ -72,28 +79,27 @@ def test_answer_question():
         }
     ]
 
-    with patch("app.graph.rag_graph.embed_text", return_value=mock_embedding):
-        with patch(
-            "app.graph.rag_graph.search_vectorstore", return_value=mock_results
-        ):
-            with patch(
-                "app.graph.rag_graph.generate_response",
-                return_value="Test answer",
-            ):
-                result = answer_question("Test question", "kb-1")
+    with (
+        patch("app.graph.rag_graph.embed_text", return_value=mock_embedding),
+        patch("app.graph.rag_graph.search_vectorstore", return_value=mock_results),
+        patch("app.graph.rag_graph.generate_response", return_value="Test answer"),
+    ):
+        result = answer_question("Test question", "kb-1")
 
-                assert "answer" in result
-                assert "sources" in result
-                assert "processing_time_ms" in result
+        assert "answer" in result
+        assert "sources" in result
+        assert "processing_time_ms" in result
 
 
 def test_answer_question_no_results():
     """Test answering when no documents found."""
     from app.graph.rag_graph import answer_question
 
-    with patch("app.graph.rag_graph.embed_text", return_value=[0.1, 0.2]):
-        with patch("app.graph.rag_graph.search_vectorstore", return_value=[]):
-            result = answer_question("Test question", "kb-1")
+    with (
+        patch("app.graph.rag_graph.embed_text", return_value=[0.1, 0.2]),
+        patch("app.graph.rag_graph.search_vectorstore", return_value=[]),
+    ):
+        result = answer_question("Test question", "kb-1")
 
-            assert "I couldn't find" in result["answer"]
-            assert result["sources"] == []
+        assert "I couldn't find" in result["answer"]
+        assert result["sources"] == []

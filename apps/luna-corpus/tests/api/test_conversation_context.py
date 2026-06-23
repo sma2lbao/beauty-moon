@@ -130,7 +130,9 @@ def test_qa_query_passes_current_knowledge_base(client, app_db):
         )
 
     assert response.status_code == 200
-    answer_question.assert_called_once_with("What?", knowledge_base_id=context["kb_one_id"])
+    answer_question.assert_called_once_with(
+        "What?", knowledge_base_id=context["kb_one_id"]
+    )
 
 
 def test_multi_turn_rejects_cross_knowledge_base_conversation(client, app_db):

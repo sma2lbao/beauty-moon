@@ -1,14 +1,16 @@
 """Tests for ReActAgent."""
+
 import ast
 import asyncio
 import operator
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.agent.base import AgentConfig
 from app.agent.modes.react import ReActAgent
 from app.agent.registry import ToolRegistry
-from app.agent.tool import ToolResult, tool
+from app.agent.tool import tool
 
 
 def _safe_eval(expression: str) -> str:
@@ -274,7 +276,8 @@ class TestReActRunWithToolCall:
                 MagicMock(
                     content=(
                         '{"thought": "Need to calculate", '
-                        '"action": {"name": "calculator", "arguments": {"expression": "2+2"}}}'
+                        '"action": {"name": "calculator", '
+                        '"arguments": {"expression": "2+2"}}}'
                     )
                 ),
                 MagicMock(
@@ -306,13 +309,15 @@ class TestReActRunWithToolCall:
                 MagicMock(
                     content=(
                         '{"thought": "Search first", '
-                        '"action": {"name": "search", "arguments": {"query": "python"}}}'
+                        '"action": {"name": "search", '
+                        '"arguments": {"query": "python"}}}'
                     )
                 ),
                 MagicMock(
                     content=(
                         '{"thought": "Now translate", '
-                        '"action": {"name": "translate", "arguments": {"text": "hello", "target_lang": "fr"}}}'
+                        '"action": {"name": "translate", '
+                        '"arguments": {"text": "hello", "target_lang": "fr"}}}'
                     )
                 ),
                 MagicMock(
@@ -400,7 +405,8 @@ class TestReActMaxIterations:
             chat.invoke.return_value = MagicMock(
                 content=(
                     '{"thought": "Keep calculating", '
-                    '"action": {"name": "calculator", "arguments": {"expression": "1+1"}}}'
+                    '"action": {"name": "calculator", '
+                    '"arguments": {"expression": "1+1"}}}'
                 )
             )
             mock.return_value = chat
@@ -424,7 +430,8 @@ class TestReActMaxIterations:
                     MagicMock(
                         content=(
                             '{"thought": "Step ' + str(i) + '", '
-                            '"action": {"name": "calculator", "arguments": {"expression": "1"}}}'
+                            '"action": {"name": "calculator", '
+                            '"arguments": {"expression": "1"}}}'
                         )
                     )
                 )
@@ -489,7 +496,8 @@ class TestReActRunStream:
                 MagicMock(
                     content=(
                         '{"thought": "Check weather", '
-                        '"action": {"name": "get_weather", "arguments": {"city": "Paris"}}}'
+                        '"action": {"name": "get_weather", '
+                        '"arguments": {"city": "Paris"}}}'
                     )
                 ),
                 MagicMock(
@@ -563,7 +571,8 @@ class TestReActRunStream:
             chat.invoke.return_value = MagicMock(
                 content=(
                     '{"thought": "Keep going", '
-                    '"action": {"name": "calculator", "arguments": {"expression": "1+1"}}}'
+                    '"action": {"name": "calculator", '
+                    '"arguments": {"expression": "1+1"}}}'
                 )
             )
             mock.return_value = chat
@@ -590,9 +599,7 @@ class TestReActEdgeCases:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
                 content=(
-                    '{"thought": "Fast", '
-                    '"action": null, '
-                    '"answer": "Quick response."}'
+                    '{"thought": "Fast", "action": null, "answer": "Quick response."}'
                 )
             )
             mock.return_value = chat
@@ -607,9 +614,7 @@ class TestReActEdgeCases:
             chat = MagicMock()
             chat.invoke.return_value = MagicMock(
                 content=(
-                    '{"thought": "Just thinking", '
-                    '"action": null, '
-                    '"observation": null}'
+                    '{"thought": "Just thinking", "action": null, "observation": null}'
                 )
             )
             mock.return_value = chat

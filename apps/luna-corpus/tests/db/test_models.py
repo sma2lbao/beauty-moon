@@ -1,4 +1,5 @@
 """Tests for database models."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -50,7 +51,9 @@ def test_document_creation(db_session):
 def test_chunk_creation(db_session):
     """Test creating a chunk."""
     _, _, knowledge_base = create_knowledge_base(db_session)
-    doc = Document(title="Test", content="Document content", knowledge_base_id=knowledge_base.id)
+    doc = Document(
+        title="Test", content="Document content", knowledge_base_id=knowledge_base.id
+    )
     db_session.add(doc)
     db_session.commit()
 
@@ -71,7 +74,9 @@ def test_chunk_creation(db_session):
 def test_chunk_with_metadata(db_session):
     """Test chunk with metadata."""
     _, _, knowledge_base = create_knowledge_base(db_session)
-    doc = Document(title="Test", content="Code content", knowledge_base_id=knowledge_base.id)
+    doc = Document(
+        title="Test", content="Code content", knowledge_base_id=knowledge_base.id
+    )
     db_session.add(doc)
     db_session.commit()
 
@@ -91,7 +96,9 @@ def test_chunk_with_metadata(db_session):
 def test_document_chunks_relationship(db_session):
     """Test document-chunk relationship."""
     _, _, knowledge_base = create_knowledge_base(db_session)
-    doc = Document(title="Test", content="Content with chunks", knowledge_base_id=knowledge_base.id)
+    doc = Document(
+        title="Test", content="Content with chunks", knowledge_base_id=knowledge_base.id
+    )
     db_session.add(doc)
     db_session.commit()
 
@@ -137,10 +144,12 @@ def test_workspace_slug_unique_per_tenant(db_session):
     db_session.add(tenant)
     db_session.commit()
 
-    db_session.add_all([
-        Workspace(name="One", slug="docs", tenant_id=tenant.id),
-        Workspace(name="Two", slug="docs", tenant_id=tenant.id),
-    ])
+    db_session.add_all(
+        [
+            Workspace(name="One", slug="docs", tenant_id=tenant.id),
+            Workspace(name="Two", slug="docs", tenant_id=tenant.id),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -149,10 +158,12 @@ def test_workspace_slug_unique_per_tenant(db_session):
 def test_knowledge_base_slug_unique_per_workspace(db_session):
     tenant, workspace, _ = create_knowledge_base(db_session)
 
-    db_session.add_all([
-        KnowledgeBase(name="One", slug="duplicate", workspace_id=workspace.id),
-        KnowledgeBase(name="Two", slug="duplicate", workspace_id=workspace.id),
-    ])
+    db_session.add_all(
+        [
+            KnowledgeBase(name="One", slug="duplicate", workspace_id=workspace.id),
+            KnowledgeBase(name="Two", slug="duplicate", workspace_id=workspace.id),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()

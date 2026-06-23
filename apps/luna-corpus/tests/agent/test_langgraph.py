@@ -1,11 +1,13 @@
 """Tests for LangGraphAgent."""
+
 import asyncio
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.agent.base import AgentConfig
-from app.agent.registry import ToolRegistry
 from app.agent.modes.langgraph import LangGraphAgent, WorkflowState
+from app.agent.registry import ToolRegistry
 from app.agent.tool import tool
 
 
@@ -112,7 +114,12 @@ class TestLangGraphAgentRun:
             chat = MagicMock()
             chat.invoke.side_effect = [
                 MagicMock(content="simple"),
-                MagicMock(content='TOOL_CALL: {"name": "get_weather", "arguments": {"city": "Beijing"}}'),
+                MagicMock(
+                    content=(
+                        'TOOL_CALL: {"name": "get_weather", '
+                        '"arguments": {"city": "Beijing"}}'
+                    )
+                ),
                 MagicMock(content="The weather in Beijing is Sunny, 25°C."),
             ]
             mock_llm.return_value = chat
@@ -137,7 +144,9 @@ class TestLangGraphAgentRun:
             mock_llm.return_value = chat
 
             agent = LangGraphAgent(AgentConfig(tools=ToolRegistry()))
-            response = asyncio.run(agent.run("Analyze the impact of AI on education and healthcare."))
+            response = asyncio.run(
+                agent.run("Analyze the impact of AI on education and healthcare.")
+            )
 
             assert response.answer is not None
             assert len(response.answer) > 0
@@ -198,7 +207,12 @@ class TestLangGraphAgentRunStream:
             chat = MagicMock()
             chat.invoke.side_effect = [
                 MagicMock(content="complex"),
-                MagicMock(content="PLAN: [analyze, research, conclude]\nRESULT: Research phase done."),
+                MagicMock(
+                    content=(
+                        "PLAN: [analyze, research, conclude]\n"
+                        "RESULT: Research phase done."
+                    )
+                ),
                 MagicMock(content="Comprehensive analysis complete."),
             ]
             mock_llm.return_value = chat
@@ -247,7 +261,12 @@ class TestLangGraphAgentRunStream:
             chat = MagicMock()
             chat.invoke.side_effect = [
                 MagicMock(content="simple"),
-                MagicMock(content='TOOL_CALL: {"name": "search", "arguments": {"query": "Python"}}'),
+                MagicMock(
+                    content=(
+                        'TOOL_CALL: {"name": "search", '
+                        '"arguments": {"query": "Python"}}'
+                    )
+                ),
                 MagicMock(content="Search results show Python is popular."),
             ]
             mock_llm.return_value = chat
@@ -324,7 +343,9 @@ class TestLangGraphAgentEdgeCases:
             chat = MagicMock()
             chat.invoke.side_effect = [
                 MagicMock(content="simple"),
-                MagicMock(content='TOOL_CALL: {"name": "unknown_tool", "arguments": {}}'),
+                MagicMock(
+                    content='TOOL_CALL: {"name": "unknown_tool", "arguments": {}}'
+                ),
                 MagicMock(content="I couldn't find that tool."),
             ]
             mock_llm.return_value = chat

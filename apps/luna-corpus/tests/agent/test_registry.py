@@ -1,7 +1,7 @@
 """Tests for ToolRegistry."""
-import pytest
-from app.agent.tool import Tool
+
 from app.agent.registry import ToolRegistry
+from app.agent.tool import Tool
 
 
 def test_registry_register():
@@ -40,11 +40,13 @@ def test_registry_list_all():
 def test_registry_get_schemas():
     """Test getting tool schemas."""
     registry = ToolRegistry()
-    registry.register(Tool(
-        name="search",
-        description="Search",
-        parameters_schema={"type": "object"},
-    ))
+    registry.register(
+        Tool(
+            name="search",
+            description="Search",
+            parameters_schema={"type": "object"},
+        )
+    )
     schemas = registry.get_schemas()
     assert len(schemas) == 1
     assert schemas[0]["function"]["name"] == "search"

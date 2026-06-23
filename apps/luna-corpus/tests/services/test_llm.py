@@ -1,4 +1,5 @@
 """Tests for Ollama integration."""
+
 from unittest.mock import MagicMock, patch
 
 
@@ -115,8 +116,9 @@ def test_get_provider_status():
         ark_model="deepseek-v4-pro-260425",
     )
 
-    with patch.object(llm, "settings", mock_settings), patch.object(
-        llm, "check_ollama_health", return_value=True
+    with (
+        patch.object(llm, "settings", mock_settings),
+        patch.object(llm, "check_ollama_health", return_value=True),
     ):
         status = llm.get_provider_status()
 

@@ -1,10 +1,9 @@
 """Integration tests for Agent module."""
-import pytest
-from unittest.mock import MagicMock, patch
+
+from app.agent.base import AgentResponse
 from app.agent.factory import AgentFactory
 from app.agent.registry import ToolRegistry
-from app.agent.tool import Tool, tool
-from app.agent.base import AgentResponse
+from app.agent.tool import tool
 from app.core.config import AgentMode
 
 
