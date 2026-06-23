@@ -120,6 +120,33 @@ def test_delete_chunks_from_vectorstore(temp_chroma_dir, monkeypatch):
     assert len(results) == 0
 
 
+def test_search_vectorstore_handles_missing_metadata(monkeypatch):
+    from app.db import vectorstore
+
+    class Collection:
+        def query(self, **kwargs):
+            return {
+                "ids": [["chunk-1"]],
+                "metadatas": [[]],
+                "documents": [["Content"]],
+                "distances": [[0.1]],
+            }
+
+    monkeypatch.setattr(vectorstore, "get_collection", lambda: Collection())
+
+    results = vectorstore.search_vectorstore([0.1], top_k=1)
+
+    assert results == [
+        {
+            "chunk_id": None,
+            "document_id": None,
+            "content": "Content",
+            "score": 0.1,
+        }
+    ]
+
+
+
 def test_search_vectorstore_filters_by_knowledge_base(temp_chroma_dir, monkeypatch):
     from app.db import vectorstore
 

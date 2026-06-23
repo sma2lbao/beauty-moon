@@ -103,16 +103,22 @@ def search_vectorstore(
 
     results = collection.query(**query_kwargs)
 
-    # Flatten and format results
     output = []
     if results["ids"] and results["ids"][0]:
+        metadatas = results["metadatas"][0] if results["metadatas"] else []
+        documents = results["documents"][0] if results["documents"] else []
+        distances = results["distances"][0] if results["distances"] else []
+
         for i, chunk_id in enumerate(results["ids"][0]):
-            output.append({
-                "chunk_id": results["metadatas"][0][i].get("chunk_id") if results["metadatas"] else None,
-                "document_id": results["metadatas"][0][i].get("document_id") if results["metadatas"] else None,
-                "content": results["documents"][0][i] if results["documents"] else None,
-                "score": results["distances"][0][i] if results["distances"] else 0.0,
-            })
+            metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
+            output.append(
+                {
+                    "chunk_id": metadata.get("chunk_id"),
+                    "document_id": metadata.get("document_id"),
+                    "content": documents[i] if i < len(documents) else None,
+                    "score": distances[i] if i < len(distances) else 0.0,
+                }
+            )
 
     return output
 
