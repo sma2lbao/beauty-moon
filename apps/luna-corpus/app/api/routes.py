@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.api.context import RequestContext, require_request_context
 from app.db.database import get_db
 from app.db.models import Chunk, ContentStatus, Conversation, Document, Message, MessageRole
 from app.graph.rag_graph import (
@@ -235,12 +236,14 @@ async def stream_query(question_req: QuestionRequest):
 async def create_document(
     doc: DocumentCreate,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> DocumentResponse:
     """Create a new document.
 
     Args:
         doc: Document to create
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Created document
@@ -251,6 +254,7 @@ async def create_document(
         source=doc.source,
         has_tables="|" in doc.content and "---" in doc.content,
         has_code="```" in doc.content or "def " in doc.content,
+        knowledge_base_id=context.knowledge_base.id,
     )
     db.add(db_doc)
     db.commit()
@@ -272,18 +276,22 @@ async def create_document(
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     status_filter: ContentStatus | None = None,
 ) -> DocumentListResponse:
     """List all documents.
 
     Args:
         db: Database session
+        context: Request context with knowledge base scope
         status_filter: Optional status filter
 
     Returns:
         List of documents
     """
-    query = db.query(Document)
+    query = db.query(Document).filter(
+        Document.knowledge_base_id == context.knowledge_base.id
+    )
 
     if status_filter:
         query = query.filter(Document.status == status_filter)
@@ -313,17 +321,26 @@ async def list_documents(
 async def get_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> DocumentResponse:
     """Get a document by ID.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Document
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -344,14 +361,23 @@ async def get_document(
 async def delete_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> None:
     """Delete a document.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -363,17 +389,26 @@ async def delete_document(
 async def process_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ProcessResponse:
     """Process a document: chunk and vectorize.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Processing result
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
