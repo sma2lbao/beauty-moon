@@ -51,7 +51,7 @@ class MessageRole(str, enum.Enum):
 
 
 class Tenant(Base):
-    """Tenant boundary..."""
+    """Tenant boundary for workspaces."""
 
     __tablename__ = "tenants"
 
