@@ -1,10 +1,8 @@
 """Tests for memory service."""
-from datetime import datetime
+
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from app.db.models import Conversation, Message, MessageRole
+from app.db.models import MessageRole
 
 
 class TestEstimateTokens:
@@ -69,18 +67,22 @@ class TestAddMessageToConversation:
         mock_db = MagicMock()
         mock_conversation = MagicMock()
 
-        with patch("app.services.memory.get_conversation", return_value=mock_conversation):
-            with patch("app.services.memory.estimate_tokens", return_value=10):
-                result = add_message_to_conversation(
-                    db=mock_db,
-                    conversation_id="conv-123",
-                    role=MessageRole.USER,
-                    content="Test message",
-                )
+        with (
+            patch(
+                "app.services.memory.get_conversation", return_value=mock_conversation
+            ),
+            patch("app.services.memory.estimate_tokens", return_value=10),
+        ):
+            result = add_message_to_conversation(
+                db=mock_db,
+                conversation_id="conv-123",
+                role=MessageRole.USER,
+                content="Test message",
+            )
 
-                mock_db.add.assert_called_once()
-                mock_db.commit.assert_called_once()
-                assert result is not None
+            mock_db.add.assert_called_once()
+            mock_db.commit.assert_called_once()
+            assert result is not None
 
 
 class TestCreateConversation:
@@ -94,6 +96,7 @@ class TestCreateConversation:
 
         result = create_conversation(
             db=mock_db,
+            knowledge_base_id="kb-test",
             title="My Conversation",
         )
 
@@ -107,7 +110,7 @@ class TestCreateConversation:
 
         mock_db = MagicMock()
 
-        result = create_conversation(db=mock_db)
+        result = create_conversation(db=mock_db, knowledge_base_id="kb-test")
 
         assert result.title.startswith("Conversation ")
 
@@ -122,7 +125,9 @@ class TestDeleteConversation:
         mock_db = MagicMock()
         mock_conversation = MagicMock()
 
-        with patch("app.services.memory.get_conversation", return_value=mock_conversation):
+        with patch(
+            "app.services.memory.get_conversation", return_value=mock_conversation
+        ):
             result = delete_conversation(db=mock_db, conversation_id="conv-123")
 
             assert result is True
@@ -152,7 +157,9 @@ class TestClearConversationMessages:
         mock_db = MagicMock()
         mock_conversation = MagicMock()
 
-        with patch("app.services.memory.get_conversation", return_value=mock_conversation):
+        with patch(
+            "app.services.memory.get_conversation", return_value=mock_conversation
+        ):
             result = clear_conversation_messages(
                 db=mock_db,
                 conversation_id="conv-123",

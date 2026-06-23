@@ -1,4 +1,5 @@
 """End-to-end integration tests."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,11 +8,12 @@ import pytest
 @pytest.fixture
 def mock_all_services():
     """Mock all external services."""
-    with patch("app.db.database.engine") as mock_engine, \
-         patch("app.db.vectorstore.get_vector_store") as mock_chroma, \
-         patch("app.services.llm.get_embeddings_model") as mock_embed, \
-         patch("app.services.llm.get_chat_model") as mock_chat:
-
+    with (
+        patch("app.db.database.engine") as mock_engine,
+        patch("app.db.vectorstore.get_vector_store") as mock_chroma,
+        patch("app.services.llm.get_embeddings_model") as mock_embed,
+        patch("app.services.llm.get_chat_model") as mock_chat,
+    ):
         mock_engine.return_value = MagicMock()
         mock_chroma.return_value = MagicMock()
 

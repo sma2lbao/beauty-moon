@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.mysql import CHAR
@@ -49,6 +50,82 @@ class MessageRole(str, enum.Enum):
     SYSTEM = "system"
 
 
+class Tenant(Base):
+    """Tenant boundary for workspaces."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    workspaces: Mapped[list["Workspace"]] = relationship(
+        "Workspace", back_populates="tenant", cascade="all, delete-orphan"
+    )
+
+
+class Workspace(Base):
+    """Workspace within a tenant."""
+
+    __tablename__ = "workspaces"
+    __table_args__ = (UniqueConstraint("tenant_id", "slug"),)
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    tenant: Mapped[Tenant] = relationship("Tenant", back_populates="workspaces")
+    knowledge_bases: Mapped[list["KnowledgeBase"]] = relationship(
+        "KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class KnowledgeBase(Base):
+    """Knowledge base within a workspace."""
+
+    __tablename__ = "knowledge_bases"
+    __table_args__ = (UniqueConstraint("workspace_id", "slug"),)
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(
+        "Workspace", back_populates="knowledge_bases"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="knowledge_base", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        "Conversation", back_populates="knowledge_base", cascade="all, delete-orphan"
+    )
+
+
 class Document(Base):
     """Document model."""
 
@@ -56,6 +133,9 @@ class Document(Base):
 
     id: Mapped[str] = mapped_column(
         CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str | None] = mapped_column(String(1000), nullable=True)
@@ -75,6 +155,9 @@ class Document(Base):
     # Relationships
     chunks: Mapped[list["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
+    )
+    knowledge_base: Mapped["KnowledgeBase"] = relationship(
+        "KnowledgeBase", back_populates="documents"
     )
 
 
@@ -111,6 +194,9 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(
         CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
+    )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -127,6 +213,9 @@ class Conversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="Message.created_at",
+    )
+    knowledge_base: Mapped["KnowledgeBase"] = relationship(
+        "KnowledgeBase", back_populates="conversations"
     )
 
 

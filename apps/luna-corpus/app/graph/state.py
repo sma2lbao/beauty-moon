@@ -18,6 +18,7 @@ class RAGState(TypedDict):
     """State for RAG question-answering graph."""
 
     question: str
+    knowledge_base_id: str
     conversation_id: str | None
     conversation_history: list[MessageDict]
     retrieved_docs: Annotated[list[dict], operator.add]

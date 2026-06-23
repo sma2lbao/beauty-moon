@@ -68,6 +68,7 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
         Updated state with retrieved documents
     """
     question = state["question"]
+    knowledge_base_id = state.get("knowledge_base_id")
 
     # Generate query embedding
     query_embedding = embed_text(question)
@@ -76,6 +77,7 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
     results = search_vectorstore(
         query_embedding=query_embedding,
         top_k=settings.retrieval_top_k,
+        knowledge_base_id=knowledge_base_id,
     )
 
     # Format retrieved docs
@@ -195,11 +197,12 @@ def get_rag_graph() -> StateGraph:
     return _rag_graph
 
 
-def answer_question(question: str) -> dict[str, Any]:
+def answer_question(question: str, knowledge_base_id: str) -> dict[str, Any]:
     """Answer a question using RAG.
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
 
     Returns:
         Answer with sources and metadata
@@ -209,6 +212,7 @@ def answer_question(question: str) -> dict[str, Any]:
     graph = get_rag_graph()
     result = graph.invoke({
         "question": question,
+        "knowledge_base_id": knowledge_base_id,
         "conversation_id": None,
         "conversation_history": [],
         "retrieved_docs": [],
@@ -224,11 +228,15 @@ def answer_question(question: str) -> dict[str, Any]:
     }
 
 
-async def answer_question_stream(question: str) -> AsyncGenerator[dict[str, Any], None]:
+async def answer_question_stream(
+    question: str,
+    knowledge_base_id: str,
+) -> AsyncGenerator[dict[str, Any], None]:
     """Stream answer to a question using RAG.
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
 
     Yields:
         Events: retrieval_status, token, done
@@ -252,6 +260,7 @@ async def answer_question_stream(question: str) -> AsyncGenerator[dict[str, Any]
     results = search_vectorstore(
         query_embedding=query_embedding,
         top_k=settings.retrieval_top_k,
+        knowledge_base_id=knowledge_base_id,
     )
 
     retrieved_docs = [
@@ -319,6 +328,7 @@ async def answer_question_stream(question: str) -> AsyncGenerator[dict[str, Any]
 
 def answer_question_multi_turn(
     question: str,
+    knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
 ) -> dict[str, Any]:
@@ -326,6 +336,7 @@ def answer_question_multi_turn(
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID for context
         include_history: Whether to include conversation history
 
@@ -337,6 +348,7 @@ def answer_question_multi_turn(
     graph = get_rag_graph()
     result = graph.invoke({
         "question": question,
+        "knowledge_base_id": knowledge_base_id,
         "conversation_id": conversation_id if include_history else None,
         "conversation_history": [],
         "retrieved_docs": [],
@@ -356,6 +368,7 @@ def answer_question_multi_turn(
 
 async def answer_question_multi_turn_stream(
     question: str,
+    knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
 ) -> AsyncGenerator[dict[str, Any], None]:
@@ -363,6 +376,7 @@ async def answer_question_multi_turn_stream(
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID for context
         include_history: Whether to include conversation history
 
@@ -403,6 +417,7 @@ async def answer_question_multi_turn_stream(
     results = search_vectorstore(
         query_embedding=query_embedding,
         top_k=settings.retrieval_top_k,
+        knowledge_base_id=knowledge_base_id,
     )
 
     retrieved_docs = [

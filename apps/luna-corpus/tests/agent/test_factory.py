@@ -1,12 +1,14 @@
 """Tests for AgentFactory."""
+
 import pytest
+
 from app.agent.factory import AgentFactory
+from app.agent.modes.direct import DirectAgent
+from app.agent.modes.langgraph import LangGraphAgent
+from app.agent.modes.plan_execute import PlanExecuteAgent
+from app.agent.modes.react import ReActAgent
 from app.agent.registry import ToolRegistry
 from app.agent.tool import Tool
-from app.agent.modes.direct import DirectAgent
-from app.agent.modes.react import ReActAgent
-from app.agent.modes.plan_execute import PlanExecuteAgent
-from app.agent.modes.langgraph import LangGraphAgent
 from app.core.config import AgentMode
 
 

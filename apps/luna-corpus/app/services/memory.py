@@ -21,21 +21,25 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def get_conversation(db: Session, conversation_id: str) -> Conversation | None:
+def get_conversation(
+    db: Session,
+    conversation_id: str,
+    knowledge_base_id: str | None = None,
+) -> Conversation | None:
     """Get a conversation by ID.
 
     Args:
         db: Database session
         conversation_id: Conversation ID
+        knowledge_base_id: Optional knowledge base ID for scoping
 
     Returns:
         Conversation or None if not found
     """
-    return (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-    )
+    query = db.query(Conversation).filter(Conversation.id == conversation_id)
+    if knowledge_base_id is not None:
+        query = query.filter(Conversation.knowledge_base_id == knowledge_base_id)
+    return query.first()
 
 
 def get_conversation_messages(
@@ -168,12 +172,14 @@ def add_message_to_conversation(
 
 def create_conversation(
     db: Session,
+    knowledge_base_id: str,
     title: str | None = None,
 ) -> Conversation:
     """Create a new conversation.
 
     Args:
         db: Database session
+        knowledge_base_id: Knowledge base ID to associate with the conversation
         title: Optional conversation title
 
     Returns:
@@ -182,7 +188,7 @@ def create_conversation(
     if not title:
         title = f"Conversation {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
-    conversation = Conversation(title=title)
+    conversation = Conversation(title=title, knowledge_base_id=knowledge_base_id)
     db.add(conversation)
     db.commit()
     db.refresh(conversation)

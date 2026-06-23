@@ -1,4 +1,5 @@
 """Tests for Chroma vector store."""
+
 import tempfile
 from pathlib import Path
 
@@ -30,8 +31,18 @@ def test_add_chunks_to_vectorstore(temp_chroma_dir, monkeypatch):
     )
 
     chunks = [
-        {"id": "chunk-1", "document_id": "doc-1", "content": "First chunk"},
-        {"id": "chunk-2", "document_id": "doc-1", "content": "Second chunk"},
+        {
+            "id": "chunk-1",
+            "document_id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "content": "First chunk",
+        },
+        {
+            "id": "chunk-2",
+            "document_id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "content": "Second chunk",
+        },
     ]
     embeddings = [
         [0.1, 0.2, 0.3],
@@ -55,8 +66,18 @@ def test_search_vectorstore(temp_chroma_dir, monkeypatch):
 
     # Add test data
     chunks = [
-        {"id": "chunk-1", "document_id": "doc-1", "content": "Python code"},
-        {"id": "chunk-2", "document_id": "doc-2", "content": "JavaScript code"},
+        {
+            "id": "chunk-1",
+            "document_id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "content": "Python code",
+        },
+        {
+            "id": "chunk-2",
+            "document_id": "doc-2",
+            "knowledge_base_id": "kb-1",
+            "content": "JavaScript code",
+        },
     ]
     embeddings = [[0.1, 0.1, 0.1], [0.9, 0.9, 0.9]]
     vectorstore.add_chunks_to_vectorstore(chunks, embeddings)
@@ -77,7 +98,12 @@ def test_delete_chunks_from_vectorstore(temp_chroma_dir, monkeypatch):
     )
 
     chunks = [
-        {"id": "chunk-1", "document_id": "doc-1", "content": "To delete"},
+        {
+            "id": "chunk-1",
+            "document_id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "content": "To delete",
+        },
     ]
     embeddings = [[0.1, 0.2, 0.3]]
     vectorstore.add_chunks_to_vectorstore(chunks, embeddings)
@@ -92,3 +118,64 @@ def test_delete_chunks_from_vectorstore(temp_chroma_dir, monkeypatch):
     # Verify deleted
     results = vectorstore.search_vectorstore([0.1, 0.2, 0.3], top_k=1)
     assert len(results) == 0
+
+
+def test_search_vectorstore_handles_missing_metadata(monkeypatch):
+    from app.db import vectorstore
+
+    class Collection:
+        def query(self, **kwargs):
+            return {
+                "ids": [["chunk-1"]],
+                "metadatas": [[]],
+                "documents": [["Content"]],
+                "distances": [[0.1]],
+            }
+
+    monkeypatch.setattr(vectorstore, "get_collection", lambda: Collection())
+
+    results = vectorstore.search_vectorstore([0.1], top_k=1)
+
+    assert results == [
+        {
+            "chunk_id": None,
+            "document_id": None,
+            "content": "Content",
+            "score": 0.1,
+        }
+    ]
+
+
+
+def test_search_vectorstore_filters_by_knowledge_base(temp_chroma_dir, monkeypatch):
+    from app.db import vectorstore
+
+    monkeypatch.setattr(
+        vectorstore, "settings", Settings(chroma_data_dir=temp_chroma_dir)
+    )
+
+    chunks = [
+        {
+            "id": "chunk-1",
+            "document_id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "content": "Python code",
+        },
+        {
+            "id": "chunk-2",
+            "document_id": "doc-2",
+            "knowledge_base_id": "kb-2",
+            "content": "JavaScript code",
+        },
+    ]
+    embeddings = [[0.1, 0.1, 0.1], [0.1, 0.1, 0.1]]
+    vectorstore.add_chunks_to_vectorstore(chunks, embeddings)
+
+    results = vectorstore.search_vectorstore(
+        [0.1, 0.1, 0.1],
+        top_k=2,
+        knowledge_base_id="kb-1",
+    )
+
+    assert len(results) == 1
+    assert results[0]["document_id"] == "doc-1"

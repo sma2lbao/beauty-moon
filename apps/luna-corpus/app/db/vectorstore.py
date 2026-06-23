@@ -58,7 +58,11 @@ def add_chunks_to_vectorstore(
     ids = [chunk["id"] for chunk in chunks]
     documents = [chunk["content"] for chunk in chunks]
     metadatas = [
-        {"chunk_id": chunk["id"], "document_id": chunk["document_id"]}
+        {
+            "chunk_id": chunk["id"],
+            "document_id": chunk["document_id"],
+            "knowledge_base_id": chunk["knowledge_base_id"],
+        }
         for chunk in chunks
     ]
 
@@ -73,12 +77,14 @@ def add_chunks_to_vectorstore(
 def search_vectorstore(
     query_embedding: list[float],
     top_k: int | None = None,
+    knowledge_base_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Search vector store for similar chunks.
 
     Args:
         query_embedding: Query embedding vector
         top_k: Number of results to return
+        knowledge_base_id: Optional knowledge base ID to filter results
 
     Returns:
         List of matching chunks with scores
@@ -88,21 +94,31 @@ def search_vectorstore(
 
     collection = get_collection()
 
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k,
-    )
+    query_kwargs: dict[str, Any] = {
+        "query_embeddings": [query_embedding],
+        "n_results": top_k,
+    }
+    if knowledge_base_id is not None:
+        query_kwargs["where"] = {"knowledge_base_id": knowledge_base_id}
 
-    # Flatten and format results
+    results = collection.query(**query_kwargs)
+
     output = []
     if results["ids"] and results["ids"][0]:
+        metadatas = results["metadatas"][0] if results["metadatas"] else []
+        documents = results["documents"][0] if results["documents"] else []
+        distances = results["distances"][0] if results["distances"] else []
+
         for i, chunk_id in enumerate(results["ids"][0]):
-            output.append({
-                "chunk_id": results["metadatas"][0][i].get("chunk_id") if results["metadatas"] else None,
-                "document_id": results["metadatas"][0][i].get("document_id") if results["metadatas"] else None,
-                "content": results["documents"][0][i] if results["documents"] else None,
-                "score": results["distances"][0][i] if results["distances"] else 0.0,
-            })
+            metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
+            output.append(
+                {
+                    "chunk_id": metadata.get("chunk_id"),
+                    "document_id": metadata.get("document_id"),
+                    "content": documents[i] if i < len(documents) else None,
+                    "score": distances[i] if i < len(distances) else 0.0,
+                }
+            )
 
     return output
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.api.context import RequestContext, require_request_context
 from app.db.database import get_db
 from app.db.models import Chunk, ContentStatus, Conversation, Document, Message, MessageRole
 from app.graph.rag_graph import (
@@ -164,16 +165,23 @@ class MultiTurnAnswerResponse(BaseModel):
 
 # Question Answering
 @router.post("/qa/query", response_model=AnswerResponse)
-async def query(question_req: QuestionRequest) -> AnswerResponse:
+async def query(
+    question_req: QuestionRequest,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+) -> AnswerResponse:
     """Answer a question using RAG.
 
     Args:
         question_req: Question request
+        context: Request context with knowledge base scope
 
     Returns:
         Answer with sources
     """
-    result = answer_question(question_req.question)
+    result = answer_question(
+        question_req.question,
+        knowledge_base_id=context.knowledge_base.id,
+    )
 
     # Enrich sources with document titles
     enriched_sources = []
@@ -193,34 +201,39 @@ async def query(question_req: QuestionRequest) -> AnswerResponse:
     )
 
 
-async def stream_event_generator(question: str) -> AsyncGenerator[str, None]:
+async def stream_event_generator(question: str, knowledge_base_id: str) -> AsyncGenerator[str, None]:
     """Generate SSE events for streaming answer.
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
 
     Yields:
         SSE formatted event strings
     """
     try:
-        async for event in answer_question_stream(question):
+        async for event in answer_question_stream(question, knowledge_base_id):
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"
 
 
 @router.post("/qa/stream")
-async def stream_query(question_req: QuestionRequest):
+async def stream_query(
+    question_req: QuestionRequest,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+):
     """Stream answer to a question using RAG.
 
     Args:
         question_req: Question request
+        context: Request context with knowledge base scope
 
     Returns:
         StreamingResponse with SSE events
     """
     return StreamingResponse(
-        stream_event_generator(question_req.question),
+        stream_event_generator(question_req.question, context.knowledge_base.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -235,12 +248,14 @@ async def stream_query(question_req: QuestionRequest):
 async def create_document(
     doc: DocumentCreate,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> DocumentResponse:
     """Create a new document.
 
     Args:
         doc: Document to create
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Created document
@@ -251,6 +266,7 @@ async def create_document(
         source=doc.source,
         has_tables="|" in doc.content and "---" in doc.content,
         has_code="```" in doc.content or "def " in doc.content,
+        knowledge_base_id=context.knowledge_base.id,
     )
     db.add(db_doc)
     db.commit()
@@ -272,18 +288,22 @@ async def create_document(
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     status_filter: ContentStatus | None = None,
 ) -> DocumentListResponse:
     """List all documents.
 
     Args:
         db: Database session
+        context: Request context with knowledge base scope
         status_filter: Optional status filter
 
     Returns:
         List of documents
     """
-    query = db.query(Document)
+    query = db.query(Document).filter(
+        Document.knowledge_base_id == context.knowledge_base.id
+    )
 
     if status_filter:
         query = query.filter(Document.status == status_filter)
@@ -313,17 +333,26 @@ async def list_documents(
 async def get_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> DocumentResponse:
     """Get a document by ID.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Document
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -344,14 +373,23 @@ async def get_document(
 async def delete_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> None:
     """Delete a document.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -363,17 +401,26 @@ async def delete_document(
 async def process_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ProcessResponse:
     """Process a document: chunk and vectorize.
 
     Args:
         document_id: Document ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Processing result
     """
-    doc = db.query(Document).filter(Document.id == document_id).first()
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -391,17 +438,19 @@ async def process_document(
 async def create_conversation_endpoint(
     conv: ConversationCreate,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Create a new conversation.
 
     Args:
         conv: Conversation data
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Created conversation
     """
-    db_conv = create_conversation(db, conv.title)
+    db_conv = create_conversation(db, context.knowledge_base.id, conv.title)
 
     return ConversationResponse(
         id=db_conv.id,
@@ -417,6 +466,7 @@ async def create_conversation_endpoint(
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     active_only: bool = Query(default=True),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> ConversationListResponse:
@@ -424,6 +474,7 @@ async def list_conversations(
 
     Args:
         db: Database session
+        context: Request context with knowledge base scope
         active_only: Filter to active conversations only
         limit: Maximum number to return
 
@@ -440,11 +491,11 @@ async def list_conversations(
         .subquery()
     )
 
-    # Main query with LEFT JOIN to message counts
+    # Main query with LEFT JOIN to message counts, scoped to knowledge base
     query = db.query(Conversation, message_count_subq.c.message_count).outerjoin(
         message_count_subq,
         Conversation.id == message_count_subq.c.conversation_id,
-    )
+    ).filter(Conversation.knowledge_base_id == context.knowledge_base.id)
 
     if active_only:
         query = query.filter(Conversation.is_active == True)
@@ -473,17 +524,19 @@ async def list_conversations(
 async def get_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Get a conversation by ID.
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Conversation
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -504,6 +557,7 @@ async def get_conversation_endpoint(
 async def get_conversation_messages_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[MessageResponse]:
     """Get messages for a conversation.
@@ -511,12 +565,13 @@ async def get_conversation_messages_endpoint(
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
         limit: Maximum messages to return
 
     Returns:
         List of messages
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -544,13 +599,18 @@ async def get_conversation_messages_endpoint(
 async def delete_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> None:
     """Delete a conversation and all its messages.
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
     """
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     if not memory_delete_conversation(db, conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -559,17 +619,19 @@ async def delete_conversation_endpoint(
 async def clear_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Clear all messages from a conversation (keeps conversation).
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Updated conversation
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -592,24 +654,26 @@ async def clear_conversation_endpoint(
 async def multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> MultiTurnAnswerResponse:
     """Answer a question with conversation context.
 
     Args:
         req: Multi-turn question request
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Answer with conversation context
     """
     # Get or create conversation
     if req.conversation_id:
-        conv = get_conversation(db, req.conversation_id)
+        conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         conversation_id = req.conversation_id
     else:
-        db_conv = create_conversation(db)
+        db_conv = create_conversation(db, context.knowledge_base.id)
         conversation_id = db_conv.id
 
     # Add user message
@@ -623,6 +687,7 @@ async def multi_turn_query(
     # Get answer with context
     result = answer_question_multi_turn(
         question=req.question,
+        knowledge_base_id=context.knowledge_base.id,
         conversation_id=conversation_id if req.include_history else None,
         include_history=req.include_history,
     )
@@ -656,6 +721,7 @@ async def multi_turn_query(
 
 async def multi_turn_stream_event_generator(
     question: str,
+    knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
 ) -> AsyncGenerator[str, None]:
@@ -663,6 +729,7 @@ async def multi_turn_stream_event_generator(
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID
         include_history: Include conversation history
 
@@ -672,6 +739,7 @@ async def multi_turn_stream_event_generator(
     try:
         async for event in answer_question_multi_turn_stream(
             question=question,
+            knowledge_base_id=knowledge_base_id,
             conversation_id=conversation_id,
             include_history=include_history,
         ):
@@ -684,6 +752,7 @@ async def multi_turn_stream_event_generator(
 async def stream_multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ):
     """Stream answer with conversation context.
 
@@ -696,12 +765,12 @@ async def stream_multi_turn_query(
     """
     # Get or create conversation
     if req.conversation_id:
-        conv = get_conversation(db, req.conversation_id)
+        conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         conversation_id = req.conversation_id
     else:
-        db_conv = create_conversation(db)
+        db_conv = create_conversation(db, context.knowledge_base.id)
         conversation_id = db_conv.id
 
     # Add user message
@@ -716,6 +785,7 @@ async def stream_multi_turn_query(
     async def generator():
         async for event in answer_question_multi_turn_stream(
             question=req.question,
+            knowledge_base_id=context.knowledge_base.id,
             conversation_id=conversation_id if req.include_history else None,
             include_history=req.include_history,
         ):

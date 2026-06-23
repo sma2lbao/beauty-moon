@@ -1,4 +1,5 @@
 """Tests for Agent API."""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -80,7 +81,10 @@ def test_query_empty_tools_uses_default_registry(client):
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
         mock_agent = AsyncMock()
         mock_agent.run.return_value = AgentResponse(
-            answer="ok", tool_calls=[], steps=1, latency_ms=100,
+            answer="ok",
+            tool_calls=[],
+            steps=1,
+            latency_ms=100,
         )
         mock_create.return_value = mock_agent
 
@@ -101,7 +105,10 @@ def test_query_empty_list_sends_empty_registry(client):
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
         mock_agent = AsyncMock()
         mock_agent.run.return_value = AgentResponse(
-            answer="ok", tool_calls=[], steps=1, latency_ms=100,
+            answer="ok",
+            tool_calls=[],
+            steps=1,
+            latency_ms=100,
         )
         mock_create.return_value = mock_agent
 
