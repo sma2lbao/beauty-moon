@@ -85,3 +85,58 @@ def test_tenant_context_migration_defines_required_schema():
     assert "default-tenant" in migration_source
     assert "default-workspace" in migration_source
     assert "default-knowledge-base" in migration_source
+
+
+def test_rbac_migration_exists():
+    project_root = Path(__file__).parents[2]
+    migration_path = (
+        project_root
+        / "alembic"
+        / "versions"
+        / "20260623_0003_rbac_enforcement.py"
+    )
+
+    assert migration_path.is_file()
+
+
+def test_rbac_migration_defines_required_schema_and_seed_data():
+    project_root = Path(__file__).parents[2]
+    migration_path = (
+        project_root
+        / "alembic"
+        / "versions"
+        /   "20260623_0003_rbac_enforcement.py"
+    )
+    migration_source = migration_path.read_text()
+
+    for table_name in [
+        "users",
+        "permissions",
+        "roles",
+        "workspace_memberships",
+        "role_permissions",
+        "workspace_membership_roles",
+    ]:
+        assert re.search(rf'create_table\(\s*"{table_name}"', migration_source), (
+            f"create_table call for '{table_name}' not found in migration"
+        )
+
+    for role_slug in ["workspace_admin", "kb_editor", "kb_reader"]:
+        assert role_slug in migration_source
+
+    for permission_slug in [
+        "workspace:read",
+        "workspace:manage",
+        "knowledge_base:read",
+        "knowledge_base:manage",
+        "document:read",
+        "document:write",
+        "document:delete",
+        "conversation:read",
+        "conversation:write",
+        "conversation:delete",
+        "qa:query",
+    ]:
+        assert permission_slug in migration_source
+
+    assert "bulk_insert" in migration_source
