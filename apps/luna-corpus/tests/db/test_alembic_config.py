@@ -53,3 +53,41 @@ def test_initial_migration_defines_current_tables():
         assert re.search(
             rf'create_table\(\s*"{table_name}"', migration_source
         ), f"create_table call for '{table_name}' not found in migration"
+
+
+def test_tenant_context_migration_exists():
+    project_root = Path(__file__).parents[2]
+    migration_path = (
+        project_root
+        / "alembic"
+        / "versions"
+        / "20260623_0002_tenant_knowledge_base_context.py"
+    )
+
+    assert migration_path.is_file()
+
+
+def test_tenant_context_migration_defines_required_schema():
+    project_root = Path(__file__).parents[2]
+    migration_path = (
+        project_root
+        / "alembic"
+        / "versions"
+        / "20260623_0002_tenant_knowledge_base_context.py"
+    )
+    migration_source = migration_path.read_text()
+
+    for table_name in ["tenants", "workspaces", "knowledge_bases"]:
+        assert re.search(
+            rf'create_table\(\s*"{table_name}"', migration_source
+        ), f"create_table call for '{table_name}' not found in migration"
+
+    assert re.search(
+        r'add_column\(\s*"documents"', migration_source
+    ), "add_column call for 'documents' not found in migration"
+    assert re.search(
+        r'add_column\(\s*"conversations"', migration_source
+    ), "add_column call for 'conversations' not found in migration"
+    assert "default-tenant" in migration_source
+    assert "default-workspace" in migration_source
+    assert "default-knowledge-base" in migration_source
