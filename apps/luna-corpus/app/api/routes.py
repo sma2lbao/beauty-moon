@@ -10,7 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.api.context import RequestContext, require_request_context
+from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
 from app.db.models import Chunk, ContentStatus, Conversation, Document, Message, MessageRole
 from app.graph.rag_graph import (
@@ -248,7 +250,10 @@ async def stream_query(
 async def create_document(
     doc: DocumentCreate,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
 ) -> DocumentResponse:
     """Create a new document.
 
@@ -288,7 +293,10 @@ async def create_document(
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
     status_filter: ContentStatus | None = None,
 ) -> DocumentListResponse:
     """List all documents.
@@ -333,7 +341,10 @@ async def list_documents(
 async def get_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
 ) -> DocumentResponse:
     """Get a document by ID.
 
@@ -373,7 +384,10 @@ async def get_document(
 async def delete_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_DELETE)),
+    ],
 ) -> None:
     """Delete a document.
 
@@ -401,7 +415,10 @@ async def delete_document(
 async def process_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
 ) -> ProcessResponse:
     """Process a document: chunk and vectorize.
 

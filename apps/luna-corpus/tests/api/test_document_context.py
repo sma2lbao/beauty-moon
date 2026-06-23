@@ -6,8 +6,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
-from app.db.models import Base, KnowledgeBase, Tenant, Workspace
+from app.db.models import Base, KnowledgeBase, Permission, Role, Tenant, User, Workspace, WorkspaceMembership
 from app.main import create_app
 
 
@@ -58,15 +59,35 @@ def client(app_db):
     app.dependency_overrides.clear()
 
 
-def headers(context, knowledge_base_id):
+def create_user_with_permissions(Session, workspace_id, label, permission_slugs):
+    session = Session()
+    try:
+        user = User(email=f"{label}@example.com", display_name=label)
+        permissions = []
+        for slug in permission_slugs:
+            permission = session.query(Permission).filter(Permission.slug == slug).first()
+            if not permission:
+                permission = Permission(name=slug, slug=slug, description=slug)
+            permissions.append(permission)
+        role = Role(name=label, slug=label, is_system=True, permissions=permissions)
+        membership = WorkspaceMembership(user=user, workspace_id=workspace_id, roles=[role])
+        session.add(membership)
+        session.commit()
+        return user.id
+    finally:
+        session.close()
+
+
+def headers(context, knowledge_base_id, user_id):
     return {
+        "X-User-Id": user_id,
         "X-Tenant-Id": context["tenant_id"],
         "X-Workspace-Id": context["workspace_id"],
         "X-Knowledge-Base-Id": knowledge_base_id,
     }
 
 
-def test_create_document_requires_context(client):
+def test_create_document_requires_user_context(client):
     response = client.post(
         "/api/v1/documents",
         json={"title": "Doc", "content": "Content"},
@@ -77,11 +98,21 @@ def test_create_document_requires_context(client):
 
 
 def test_document_create_and_list_are_scoped_to_knowledge_base(client, app_db):
-    _, _, context = app_db
+    _, Session, context = app_db
+    user_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "document_editor",
+        [
+            PermissionSlug.DOCUMENT_READ,
+            PermissionSlug.DOCUMENT_WRITE,
+            PermissionSlug.DOCUMENT_DELETE,
+        ],
+    )
 
     created = client.post(
         "/api/v1/documents",
-        headers=headers(context, context["kb_one_id"]),
+        headers=headers(context, context["kb_one_id"], user_id),
         json={"title": "Doc One", "content": "Content one"},
     )
 
@@ -91,11 +122,11 @@ def test_document_create_and_list_are_scoped_to_knowledge_base(client, app_db):
 
     kb_one_list = client.get(
         "/api/v1/documents",
-        headers=headers(context, context["kb_one_id"]),
+        headers=headers(context, context["kb_one_id"], user_id),
     )
     kb_two_list = client.get(
         "/api/v1/documents",
-        headers=headers(context, context["kb_two_id"]),
+        headers=headers(context, context["kb_two_id"], user_id),
     )
 
     assert kb_one_list.status_code == 200
@@ -105,25 +136,93 @@ def test_document_create_and_list_are_scoped_to_knowledge_base(client, app_db):
     assert kb_two_list.json()["total"] == 0
 
 
-def test_document_detail_delete_and_process_reject_cross_knowledge_base(client, app_db):
-    _, _, context = app_db
+def test_document_reader_cannot_create_or_delete_documents(client, app_db):
+    _, Session, context = app_db
+    reader_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "document_reader",
+        [PermissionSlug.DOCUMENT_READ],
+    )
+    editor_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "document_editor_for_reader_test",
+        [PermissionSlug.DOCUMENT_READ, PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_DELETE],
+    )
     created = client.post(
         "/api/v1/documents",
-        headers=headers(context, context["kb_one_id"]),
+        headers=headers(context, context["kb_one_id"], editor_id),
+        json={"title": "Doc One", "content": "Content one"},
+    ).json()
+
+    create_response = client.post(
+        "/api/v1/documents",
+        headers=headers(context, context["kb_one_id"], reader_id),
+        json={"title": "Forbidden", "content": "Nope"},
+    )
+    delete_response = client.delete(
+        f"/api/v1/documents/{created['id']}",
+        headers=headers(context, context["kb_one_id"], reader_id),
+    )
+
+    assert create_response.status_code == 403
+    assert create_response.json()["detail"] == "Missing required permission: document:write"
+    assert delete_response.status_code == 403
+    assert delete_response.json()["detail"] == "Missing required permission: document:delete"
+
+
+def test_document_write_permission_allows_processing(client, app_db):
+    _, Session, context = app_db
+    editor_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "document_processor",
+        [PermissionSlug.DOCUMENT_READ, PermissionSlug.DOCUMENT_WRITE],
+    )
+    created = client.post(
+        "/api/v1/documents",
+        headers=headers(context, context["kb_one_id"], editor_id),
+        json={"title": "Doc One", "content": "Content one"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/documents/{created['id']}/process",
+        headers=headers(context, context["kb_one_id"], editor_id),
+    )
+
+    assert response.status_code == 200
+
+
+def test_document_detail_delete_and_process_reject_cross_knowledge_base(client, app_db):
+    _, Session, context = app_db
+    user_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "document_admin",
+        [
+            PermissionSlug.DOCUMENT_READ,
+            PermissionSlug.DOCUMENT_WRITE,
+            PermissionSlug.DOCUMENT_DELETE,
+        ],
+    )
+    created = client.post(
+        "/api/v1/documents",
+        headers=headers(context, context["kb_one_id"], user_id),
         json={"title": "Doc One", "content": "Content one"},
     ).json()
 
     detail = client.get(
         f"/api/v1/documents/{created['id']}",
-        headers=headers(context, context["kb_two_id"]),
+        headers=headers(context, context["kb_two_id"], user_id),
     )
     delete = client.delete(
         f"/api/v1/documents/{created['id']}",
-        headers=headers(context, context["kb_two_id"]),
+        headers=headers(context, context["kb_two_id"], user_id),
     )
     process = client.post(
         f"/api/v1/documents/{created['id']}/process",
-        headers=headers(context, context["kb_two_id"]),
+        headers=headers(context, context["kb_two_id"], user_id),
     )
 
     assert detail.status_code == 404
