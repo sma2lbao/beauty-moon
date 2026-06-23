@@ -45,7 +45,26 @@ Review generated revisions before committing them.
 
 ## Tenant and knowledge-base context
 
-P0-M2 scopes documents, conversations, and RAG retrieval by knowledge base. Create the hierarchy first:
+P0-M3 adds workspace-scoped RBAC enforcement to protected corpus routes. Protected routes require the P0-M2 resource context headers plus temporary request identity:
+
+```http
+X-User-Id: <user-id>
+X-Tenant-Id: <tenant-id>
+X-Workspace-Id: <workspace-id>
+X-Knowledge-Base-Id: <knowledge-base-id>
+```
+
+`X-User-Id` is temporary request identity for development and internal calls. It is not authentication and is not a production security credential.
+
+Seeded roles are stored in the database:
+
+- `workspace_admin`: all workspace, knowledge-base, document, conversation, and QA permissions.
+- `kb_editor`: read knowledge-base metadata, read/write/delete documents, read/write/delete conversations, and query QA.
+- `kb_reader`: read workspace and knowledge-base metadata, read documents, read conversations, and query QA.
+
+Seeded permissions include `workspace:read`, `workspace:manage`, `knowledge_base:read`, `knowledge_base:manage`, `document:read`, `document:write`, `document:delete`, `conversation:read`, `conversation:write`, `conversation:delete`, and `qa:query`.
+
+Create the tenant and workspace hierarchy first:
 
 ```bash
 POST /api/v1/tenants
@@ -53,17 +72,9 @@ POST /api/v1/workspaces
 POST /api/v1/knowledge-bases
 ```
 
-Knowledge-base scoped endpoints require these headers:
+`POST /api/v1/tenants` and `POST /api/v1/workspaces` remain bootstrap-only setup endpoints and do not require `X-User-Id`. `GET /api/v1/tenants` and `GET /api/v1/workspaces` are scoped to the active workspaces where the current user has membership.
 
-```http
-X-Tenant-Id: <tenant-id>
-X-Workspace-Id: <workspace-id>
-X-Knowledge-Base-Id: <knowledge-base-id>
-```
-
-The headers provide temporary request context only. They are not authentication or authorization credentials.
-
-The scoped endpoints include document creation/listing/detail/deletion/processing, single-turn QA, streaming QA, conversations, and multi-turn QA. Requests using a document or conversation from another knowledge base return `404`.
+Requests using a document or conversation from another knowledge base still return `404`. Requests from users without the required workspace membership or permission return `403`.
 
 ## Local development
 

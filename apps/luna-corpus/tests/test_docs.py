@@ -32,3 +32,18 @@ def test_readme_documents_knowledge_base_context_headers():
     assert "X-Knowledge-Base-Id" in readme
     assert "POST /api/v1/tenants" in readme
     assert "POST /api/v1/knowledge-bases" in readme
+
+
+def test_readme_documents_p0_m3_rbac_context():
+    readme = Path(__file__).parents[1] / "README.md"
+    content = readme.read_text()
+
+    assert "X-User-Id" in content
+    assert "workspace_admin" in content
+    assert "kb_editor" in content
+    assert "kb_reader" in content
+    assert "document:read" in content
+    assert "qa:query" in content
+    assert "POST /api/v1/tenants" in content
+    assert "bootstrap" in content.lower()
+    assert "not authentication" in content.lower()

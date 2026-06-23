@@ -6,11 +6,13 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -48,6 +50,136 @@ class MessageRole(str, enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+
+
+role_permissions = Table(
+    "role_permissions",
+    Base.metadata,
+    Column(
+        "role_id",
+        CHAR(36),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "permission_id",
+        CHAR(36),
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+workspace_membership_roles = Table(
+    "workspace_membership_roles",
+    Base.metadata,
+    Column(
+        "membership_id",
+        CHAR(36),
+        ForeignKey("workspace_memberships.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "role_id",
+        CHAR(36),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class User(Base):
+    """Application identity resolved from temporary request headers."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        "WorkspaceMembership", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Permission(Base):
+    """Seeded permission that can be assigned to roles."""
+
+    __tablename__ = "permissions"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    roles: Mapped[list["Role"]] = relationship(
+        "Role", secondary=role_permissions, back_populates="permissions"
+    )
+
+
+class Role(Base):
+    """Seeded role that grants permissions to workspace memberships."""
+
+    __tablename__ = "roles"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    permissions: Mapped[list[Permission]] = relationship(
+        "Permission", secondary=role_permissions, back_populates="roles"
+    )
+    workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        "WorkspaceMembership",
+        secondary=workspace_membership_roles,
+        back_populates="roles",
+    )
+
+
+class WorkspaceMembership(Base):
+    """User membership in a workspace."""
+
+    __tablename__ = "workspace_memberships"
+    __table_args__ = (UniqueConstraint("user_id", "workspace_id"),)
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="workspace_memberships")
+    workspace: Mapped["Workspace"] = relationship(
+        "Workspace", back_populates="memberships"
+    )
+    roles: Mapped[list[Role]] = relationship(
+        "Role", secondary=workspace_membership_roles, back_populates="workspace_memberships"
+    )
 
 
 class Tenant(Base):
@@ -92,6 +224,9 @@ class Workspace(Base):
     tenant: Mapped[Tenant] = relationship("Tenant", back_populates="workspaces")
     knowledge_bases: Mapped[list["KnowledgeBase"]] = relationship(
         "KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        "WorkspaceMembership", back_populates="workspace", cascade="all, delete-orphan"
     )
 
 

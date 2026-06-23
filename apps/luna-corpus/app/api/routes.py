@@ -10,7 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app.api.context import RequestContext, require_request_context
+from app.api.auth import AuthenticatedRequestContext, require_permission
+from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
 from app.db.models import Chunk, ContentStatus, Conversation, Document, Message, MessageRole
 from app.graph.rag_graph import (
@@ -167,7 +168,10 @@ class MultiTurnAnswerResponse(BaseModel):
 @router.post("/qa/query", response_model=AnswerResponse)
 async def query(
     question_req: QuestionRequest,
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
 ) -> AnswerResponse:
     """Answer a question using RAG.
 
@@ -221,7 +225,10 @@ async def stream_event_generator(question: str, knowledge_base_id: str) -> Async
 @router.post("/qa/stream")
 async def stream_query(
     question_req: QuestionRequest,
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
 ):
     """Stream answer to a question using RAG.
 
@@ -248,7 +255,10 @@ async def stream_query(
 async def create_document(
     doc: DocumentCreate,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
 ) -> DocumentResponse:
     """Create a new document.
 
@@ -288,7 +298,10 @@ async def create_document(
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
     status_filter: ContentStatus | None = None,
 ) -> DocumentListResponse:
     """List all documents.
@@ -333,7 +346,10 @@ async def list_documents(
 async def get_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
 ) -> DocumentResponse:
     """Get a document by ID.
 
@@ -373,7 +389,10 @@ async def get_document(
 async def delete_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_DELETE)),
+    ],
 ) -> None:
     """Delete a document.
 
@@ -401,7 +420,10 @@ async def delete_document(
 async def process_document(
     document_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
 ) -> ProcessResponse:
     """Process a document: chunk and vectorize.
 
@@ -438,7 +460,10 @@ async def process_document(
 async def create_conversation_endpoint(
     conv: ConversationCreate,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_WRITE)),
+    ],
 ) -> ConversationResponse:
     """Create a new conversation.
 
@@ -466,7 +491,10 @@ async def create_conversation_endpoint(
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_READ)),
+    ],
     active_only: bool = Query(default=True),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> ConversationListResponse:
@@ -524,7 +552,10 @@ async def list_conversations(
 async def get_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_READ)),
+    ],
 ) -> ConversationResponse:
     """Get a conversation by ID.
 
@@ -557,7 +588,10 @@ async def get_conversation_endpoint(
 async def get_conversation_messages_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_READ)),
+    ],
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[MessageResponse]:
     """Get messages for a conversation.
@@ -599,7 +633,10 @@ async def get_conversation_messages_endpoint(
 async def delete_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_DELETE)),
+    ],
 ) -> None:
     """Delete a conversation and all its messages.
 
@@ -619,7 +656,10 @@ async def delete_conversation_endpoint(
 async def clear_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.CONVERSATION_WRITE)),
+    ],
 ) -> ConversationResponse:
     """Clear all messages from a conversation (keeps conversation).
 
@@ -654,7 +694,10 @@ async def clear_conversation_endpoint(
 async def multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE)),
+    ],
 ) -> MultiTurnAnswerResponse:
     """Answer a question with conversation context.
 
@@ -752,7 +795,10 @@ async def multi_turn_stream_event_generator(
 async def stream_multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
-    context: Annotated[RequestContext, Depends(require_request_context)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE)),
+    ],
 ):
     """Stream answer with conversation context.
 
