@@ -165,16 +165,20 @@ class MultiTurnAnswerResponse(BaseModel):
 
 # Question Answering
 @router.post("/qa/query", response_model=AnswerResponse)
-async def query(question_req: QuestionRequest) -> AnswerResponse:
+async def query(
+    question_req: QuestionRequest,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+) -> AnswerResponse:
     """Answer a question using RAG.
 
     Args:
         question_req: Question request
+        context: Request context with knowledge base scope
 
     Returns:
         Answer with sources
     """
-    result = answer_question(question_req.question)
+    result = answer_question(question_req.question, context.knowledge_base.id)
 
     # Enrich sources with document titles
     enriched_sources = []
@@ -194,34 +198,39 @@ async def query(question_req: QuestionRequest) -> AnswerResponse:
     )
 
 
-async def stream_event_generator(question: str) -> AsyncGenerator[str, None]:
+async def stream_event_generator(question: str, knowledge_base_id: str) -> AsyncGenerator[str, None]:
     """Generate SSE events for streaming answer.
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
 
     Yields:
         SSE formatted event strings
     """
     try:
-        async for event in answer_question_stream(question):
+        async for event in answer_question_stream(question, knowledge_base_id):
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"
 
 
 @router.post("/qa/stream")
-async def stream_query(question_req: QuestionRequest):
+async def stream_query(
+    question_req: QuestionRequest,
+    context: Annotated[RequestContext, Depends(require_request_context)],
+):
     """Stream answer to a question using RAG.
 
     Args:
         question_req: Question request
+        context: Request context with knowledge base scope
 
     Returns:
         StreamingResponse with SSE events
     """
     return StreamingResponse(
-        stream_event_generator(question_req.question),
+        stream_event_generator(question_req.question, context.knowledge_base.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -627,12 +636,14 @@ async def clear_conversation_endpoint(
 async def multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> MultiTurnAnswerResponse:
     """Answer a question with conversation context.
 
     Args:
         req: Multi-turn question request
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Answer with conversation context
@@ -658,6 +669,7 @@ async def multi_turn_query(
     # Get answer with context
     result = answer_question_multi_turn(
         question=req.question,
+        knowledge_base_id=context.knowledge_base.id,
         conversation_id=conversation_id if req.include_history else None,
         include_history=req.include_history,
     )
@@ -691,6 +703,7 @@ async def multi_turn_query(
 
 async def multi_turn_stream_event_generator(
     question: str,
+    knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
 ) -> AsyncGenerator[str, None]:
@@ -698,6 +711,7 @@ async def multi_turn_stream_event_generator(
 
     Args:
         question: User question
+        knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID
         include_history: Include conversation history
 
@@ -707,6 +721,7 @@ async def multi_turn_stream_event_generator(
     try:
         async for event in answer_question_multi_turn_stream(
             question=question,
+            knowledge_base_id=knowledge_base_id,
             conversation_id=conversation_id,
             include_history=include_history,
         ):
@@ -719,6 +734,7 @@ async def multi_turn_stream_event_generator(
 async def stream_multi_turn_query(
     req: MultiTurnQuestionRequest,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ):
     """Stream answer with conversation context.
 
@@ -751,6 +767,7 @@ async def stream_multi_turn_query(
     async def generator():
         async for event in answer_question_multi_turn_stream(
             question=req.question,
+            knowledge_base_id=context.knowledge_base.id,
             conversation_id=conversation_id if req.include_history else None,
             include_history=req.include_history,
         ):

@@ -80,7 +80,7 @@ def test_answer_question():
                 "app.graph.rag_graph.generate_response",
                 return_value="Test answer",
             ):
-                result = answer_question("Test question")
+                result = answer_question("Test question", "kb-1")
 
                 assert "answer" in result
                 assert "sources" in result
@@ -93,7 +93,7 @@ def test_answer_question_no_results():
 
     with patch("app.graph.rag_graph.embed_text", return_value=[0.1, 0.2]):
         with patch("app.graph.rag_graph.search_vectorstore", return_value=[]):
-            result = answer_question("Test question")
+            result = answer_question("Test question", "kb-1")
 
             assert "I couldn't find" in result["answer"]
             assert result["sources"] == []

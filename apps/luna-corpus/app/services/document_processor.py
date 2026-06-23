@@ -121,7 +121,12 @@ class DocumentProcessor:
 
             add_chunks_to_vectorstore(
                 chunks=[
-                    {"id": c.id, "document_id": c.document_id, "content": c.content}
+                    {
+                        "id": c.id,
+                        "document_id": c.document_id,
+                        "knowledge_base_id": document.knowledge_base_id,
+                        "content": c.content,
+                    }
                     for c in chunks
                 ],
                 embeddings=embeddings,
