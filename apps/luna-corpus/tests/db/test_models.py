@@ -1,9 +1,20 @@
 """Tests for database models."""
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, Chunk, ContentStatus, ContentType, Document
+from app.db.models import (
+    Base,
+    Chunk,
+    ContentStatus,
+    ContentType,
+    Conversation,
+    Document,
+    KnowledgeBase,
+    Tenant,
+    Workspace,
+)
 
 
 @pytest.fixture
@@ -20,10 +31,12 @@ def db_session():
 
 def test_document_creation(db_session):
     """Test creating a document."""
+    _, _, knowledge_base = create_knowledge_base(db_session)
     doc = Document(
         title="Test Document",
         content="This is test content.",
         source="test://example",
+        knowledge_base_id=knowledge_base.id,
     )
     db_session.add(doc)
     db_session.commit()
@@ -36,7 +49,8 @@ def test_document_creation(db_session):
 
 def test_chunk_creation(db_session):
     """Test creating a chunk."""
-    doc = Document(title="Test", content="Document content")
+    _, _, knowledge_base = create_knowledge_base(db_session)
+    doc = Document(title="Test", content="Document content", knowledge_base_id=knowledge_base.id)
     db_session.add(doc)
     db_session.commit()
 
@@ -56,7 +70,8 @@ def test_chunk_creation(db_session):
 
 def test_chunk_with_metadata(db_session):
     """Test chunk with metadata."""
-    doc = Document(title="Test", content="Code content")
+    _, _, knowledge_base = create_knowledge_base(db_session)
+    doc = Document(title="Test", content="Code content", knowledge_base_id=knowledge_base.id)
     db_session.add(doc)
     db_session.commit()
 
@@ -75,7 +90,8 @@ def test_chunk_with_metadata(db_session):
 
 def test_document_chunks_relationship(db_session):
     """Test document-chunk relationship."""
-    doc = Document(title="Test", content="Content with chunks")
+    _, _, knowledge_base = create_knowledge_base(db_session)
+    doc = Document(title="Test", content="Content with chunks", knowledge_base_id=knowledge_base.id)
     db_session.add(doc)
     db_session.commit()
 
@@ -90,3 +106,84 @@ def test_document_chunks_relationship(db_session):
 
     assert len(doc.chunks) == 3
     assert doc.chunks[0].chunk_index == 0
+
+
+def create_knowledge_base(db_session):
+    tenant = Tenant(name="Acme", slug="acme")
+    workspace = Workspace(name="Research", slug="research", tenant=tenant)
+    knowledge_base = KnowledgeBase(
+        name="Docs",
+        slug="docs",
+        description="Product documentation",
+        workspace=workspace,
+    )
+    db_session.add(knowledge_base)
+    db_session.commit()
+    return tenant, workspace, knowledge_base
+
+
+def test_tenant_workspace_knowledge_base_hierarchy(db_session):
+    tenant, workspace, knowledge_base = create_knowledge_base(db_session)
+
+    assert tenant.id is not None
+    assert workspace.tenant_id == tenant.id
+    assert knowledge_base.workspace_id == workspace.id
+    assert tenant.workspaces == [workspace]
+    assert workspace.knowledge_bases == [knowledge_base]
+
+
+def test_workspace_slug_unique_per_tenant(db_session):
+    tenant = Tenant(name="Acme", slug="acme")
+    db_session.add(tenant)
+    db_session.commit()
+
+    db_session.add_all([
+        Workspace(name="One", slug="docs", tenant_id=tenant.id),
+        Workspace(name="Two", slug="docs", tenant_id=tenant.id),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_knowledge_base_slug_unique_per_workspace(db_session):
+    tenant, workspace, _ = create_knowledge_base(db_session)
+
+    db_session.add_all([
+        KnowledgeBase(name="One", slug="duplicate", workspace_id=workspace.id),
+        KnowledgeBase(name="Two", slug="duplicate", workspace_id=workspace.id),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_document_belongs_to_knowledge_base(db_session):
+    _, _, knowledge_base = create_knowledge_base(db_session)
+
+    doc = Document(
+        title="Scoped Document",
+        content="Scoped content",
+        knowledge_base_id=knowledge_base.id,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    assert doc.knowledge_base_id == knowledge_base.id
+    assert doc.knowledge_base == knowledge_base
+    assert knowledge_base.documents == [doc]
+
+
+def test_conversation_belongs_to_knowledge_base(db_session):
+    _, _, knowledge_base = create_knowledge_base(db_session)
+
+    conversation = Conversation(
+        title="Scoped Conversation",
+        knowledge_base_id=knowledge_base.id,
+    )
+    db_session.add(conversation)
+    db_session.commit()
+
+    assert conversation.knowledge_base_id == knowledge_base.id
+    assert conversation.knowledge_base == knowledge_base
+    assert knowledge_base.conversations == [conversation]
