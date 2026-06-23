@@ -94,6 +94,7 @@ class TestCreateConversation:
 
         result = create_conversation(
             db=mock_db,
+            knowledge_base_id="kb-test",
             title="My Conversation",
         )
 
@@ -107,7 +108,7 @@ class TestCreateConversation:
 
         mock_db = MagicMock()
 
-        result = create_conversation(db=mock_db)
+        result = create_conversation(db=mock_db, knowledge_base_id="kb-test")
 
         assert result.title.startswith("Conversation ")
 

@@ -178,7 +178,10 @@ async def query(
     Returns:
         Answer with sources
     """
-    result = answer_question(question_req.question, context.knowledge_base.id)
+    result = answer_question(
+        question_req.question,
+        knowledge_base_id=context.knowledge_base.id,
+    )
 
     # Enrich sources with document titles
     enriched_sources = []
@@ -435,17 +438,19 @@ async def process_document(
 async def create_conversation_endpoint(
     conv: ConversationCreate,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Create a new conversation.
 
     Args:
         conv: Conversation data
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Created conversation
     """
-    db_conv = create_conversation(db, conv.title)
+    db_conv = create_conversation(db, context.knowledge_base.id, conv.title)
 
     return ConversationResponse(
         id=db_conv.id,
@@ -461,6 +466,7 @@ async def create_conversation_endpoint(
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     active_only: bool = Query(default=True),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> ConversationListResponse:
@@ -468,6 +474,7 @@ async def list_conversations(
 
     Args:
         db: Database session
+        context: Request context with knowledge base scope
         active_only: Filter to active conversations only
         limit: Maximum number to return
 
@@ -484,11 +491,11 @@ async def list_conversations(
         .subquery()
     )
 
-    # Main query with LEFT JOIN to message counts
+    # Main query with LEFT JOIN to message counts, scoped to knowledge base
     query = db.query(Conversation, message_count_subq.c.message_count).outerjoin(
         message_count_subq,
         Conversation.id == message_count_subq.c.conversation_id,
-    )
+    ).filter(Conversation.knowledge_base_id == context.knowledge_base.id)
 
     if active_only:
         query = query.filter(Conversation.is_active == True)
@@ -517,17 +524,19 @@ async def list_conversations(
 async def get_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Get a conversation by ID.
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Conversation
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -548,6 +557,7 @@ async def get_conversation_endpoint(
 async def get_conversation_messages_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[MessageResponse]:
     """Get messages for a conversation.
@@ -555,12 +565,13 @@ async def get_conversation_messages_endpoint(
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
         limit: Maximum messages to return
 
     Returns:
         List of messages
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -588,13 +599,18 @@ async def get_conversation_messages_endpoint(
 async def delete_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> None:
     """Delete a conversation and all its messages.
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
     """
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     if not memory_delete_conversation(db, conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -603,17 +619,19 @@ async def delete_conversation_endpoint(
 async def clear_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
+    context: Annotated[RequestContext, Depends(require_request_context)],
 ) -> ConversationResponse:
     """Clear all messages from a conversation (keeps conversation).
 
     Args:
         conversation_id: Conversation ID
         db: Database session
+        context: Request context with knowledge base scope
 
     Returns:
         Updated conversation
     """
-    conv = get_conversation(db, conversation_id)
+    conv = get_conversation(db, conversation_id, context.knowledge_base.id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -650,12 +668,12 @@ async def multi_turn_query(
     """
     # Get or create conversation
     if req.conversation_id:
-        conv = get_conversation(db, req.conversation_id)
+        conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         conversation_id = req.conversation_id
     else:
-        db_conv = create_conversation(db)
+        db_conv = create_conversation(db, context.knowledge_base.id)
         conversation_id = db_conv.id
 
     # Add user message
@@ -747,12 +765,12 @@ async def stream_multi_turn_query(
     """
     # Get or create conversation
     if req.conversation_id:
-        conv = get_conversation(db, req.conversation_id)
+        conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         conversation_id = req.conversation_id
     else:
-        db_conv = create_conversation(db)
+        db_conv = create_conversation(db, context.knowledge_base.id)
         conversation_id = db_conv.id
 
     # Add user message
