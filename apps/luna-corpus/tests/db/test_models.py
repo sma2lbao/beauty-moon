@@ -13,8 +13,12 @@ from app.db.models import (
     Conversation,
     Document,
     KnowledgeBase,
+    Permission,
+    Role,
     Tenant,
+    User,
     Workspace,
+    WorkspaceMembership,
 )
 
 
@@ -198,3 +202,92 @@ def test_conversation_belongs_to_knowledge_base(db_session):
     assert conversation.knowledge_base_id == knowledge_base.id
     assert conversation.knowledge_base == knowledge_base
     assert knowledge_base.conversations == [conversation]
+
+
+def test_user_email_is_unique(db_session):
+    db_session.add_all([
+        User(email="owner@example.com", display_name="Owner"),
+        User(email="owner@example.com", display_name="Duplicate"),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_workspace_membership_is_unique_per_user_and_workspace(db_session):
+    _, workspace, _ = create_knowledge_base(db_session)
+    user = User(email="member@example.com", display_name="Member")
+    db_session.add(user)
+    db_session.commit()
+
+    db_session.add_all([
+        WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
+        WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_workspace_membership_relationships(db_session):
+    _, workspace, _ = create_knowledge_base(db_session)
+    user = User(email="member@example.com", display_name="Member")
+    membership = WorkspaceMembership(user=user, workspace=workspace)
+    db_session.add(membership)
+    db_session.commit()
+
+    assert membership.id is not None
+    assert membership.is_active is True
+    assert membership.user == user
+    assert membership.workspace == workspace
+    assert user.workspace_memberships == [membership]
+    assert workspace.memberships == [membership]
+
+
+def test_role_slug_is_unique(db_session):
+    db_session.add_all([
+        Role(name="Reader", slug="kb_reader", is_system=True),
+        Role(name="Duplicate Reader", slug="kb_reader", is_system=True),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_permission_slug_is_unique(db_session):
+    db_session.add_all([
+        Permission(name="Document Read", slug="document:read"),
+        Permission(name="Duplicate Document Read", slug="document:read"),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_role_permission_relationship(db_session):
+    permission = Permission(name="Document Read", slug="document:read")
+    role = Role(
+        name="Knowledge Base Reader",
+        slug="kb_reader",
+        description="Read knowledge-base content",
+        is_system=True,
+        permissions=[permission],
+    )
+    db_session.add(role)
+    db_session.commit()
+
+    assert role.id is not None
+    assert role.permissions == [permission]
+    assert permission.roles == [role]
+
+
+def test_workspace_membership_role_relationship(db_session):
+    _, workspace, _ = create_knowledge_base(db_session)
+    user = User(email="member@example.com", display_name="Member")
+    role = Role(name="Editor", slug="kb_editor", is_system=True)
+    membership = WorkspaceMembership(user=user, workspace=workspace, roles=[role])
+    db_session.add(membership)
+    db_session.commit()
+
+    assert membership.roles == [role]
+    assert role.workspace_memberships == [membership]
