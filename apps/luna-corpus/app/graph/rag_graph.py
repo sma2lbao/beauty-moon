@@ -5,7 +5,8 @@ from typing import Any, AsyncGenerator
 from langgraph.graph import END, StateGraph
 
 from app.core.config import get_settings
-from app.db.database import SessionLocal
+from app.db.database import SessionLocal, get_db
+from app.db.models import Document
 from app.db.vectorstore import search_vectorstore
 from app.graph.state import RAGState
 from app.services.llm import embed_text, generate_response, generate_streaming_response
@@ -17,6 +18,52 @@ from app.services.memory import (
 from app.services.prompt_builder import build_rag_prompt
 
 settings = get_settings()
+
+
+def validate_retrieved_docs_for_knowledge_base(
+    retrieved_docs: list[dict[str, Any]],
+    knowledge_base_id: str,
+) -> list[dict[str, Any]]:
+    """Keep only retrieved docs whose SQL document belongs to the knowledge base."""
+    document_ids = {
+        doc.get("document_id") for doc in retrieved_docs if doc.get("document_id")
+    }
+    if not document_ids:
+        return []
+
+    db = next(get_db())
+    try:
+        allowed_document_ids = {
+            row[0]
+            for row in db.query(Document.id)
+            .filter(
+                Document.id.in_(document_ids),
+                Document.knowledge_base_id == knowledge_base_id,
+            )
+            .all()
+        }
+    finally:
+        db.close()
+
+    return [
+        doc
+        for doc in retrieved_docs
+        if doc.get("document_id") in allowed_document_ids
+    ]
+
+
+def format_sources(retrieved_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Format validated retrieved docs as API sources."""
+    return [
+        {
+            "document_id": doc["document_id"],
+            "chunk_content": doc["content"][:200] + "..."
+            if len(doc["content"]) > 200
+            else doc["content"],
+            "relevance_score": doc["score"],
+        }
+        for doc in retrieved_docs
+    ]
 
 
 def retrieve_memory_node(state: RAGState) -> dict[str, Any]:
@@ -90,6 +137,11 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
             "score": result.get("score", 0.0),
         })
 
+    retrieved_docs = validate_retrieved_docs_for_knowledge_base(
+        retrieved_docs,
+        knowledge_base_id,
+    )
+
     return {"retrieved_docs": retrieved_docs}
 
 
@@ -147,16 +199,7 @@ def generate_node(state: RAGState) -> dict[str, Any]:
     answer = generate_response(prompt=full_prompt, context=None)
 
     # Format sources
-    sources = [
-        {
-            "document_id": doc["document_id"],
-            "chunk_content": doc["content"][:200] + "..."
-            if len(doc["content"]) > 200
-            else doc["content"],
-            "relevance_score": doc["score"],
-        }
-        for doc in retrieved_docs
-    ]
+    sources = format_sources(retrieved_docs)
 
     return {"answer": answer, "sources": sources}
 
@@ -273,6 +316,11 @@ async def answer_question_stream(
         for result in results
     ]
 
+    retrieved_docs = validate_retrieved_docs_for_knowledge_base(
+        retrieved_docs,
+        knowledge_base_id,
+    )
+
     yield {
         "event": "retrieval_status",
         "data": f"检索到 {len(retrieved_docs)} 个相关文档",
@@ -305,14 +353,7 @@ async def answer_question_stream(
         yield {"event": "token", "data": token}
 
     # Format sources
-    sources = [
-        {
-            "document_id": doc["document_id"],
-            "chunk_content": doc["content"][:200] + "..." if len(doc["content"]) > 200 else doc["content"],
-            "relevance_score": doc["score"],
-        }
-        for doc in retrieved_docs
-    ]
+    sources = format_sources(retrieved_docs)
 
     processing_time_ms = int((time.time() - start_time) * 1000)
 
@@ -430,6 +471,11 @@ async def answer_question_multi_turn_stream(
         for result in results
     ]
 
+    retrieved_docs = validate_retrieved_docs_for_knowledge_base(
+        retrieved_docs,
+        knowledge_base_id,
+    )
+
     yield {
         "event": "retrieval_status",
         "data": f"检索到 {len(retrieved_docs)} 个相关文档",
@@ -478,16 +524,7 @@ async def answer_question_multi_turn_stream(
         yield {"event": "token", "data": token}
 
     # Format sources
-    sources = [
-        {
-            "document_id": doc["document_id"],
-            "chunk_content": doc["content"][:200] + "..."
-            if len(doc["content"]) > 200
-            else doc["content"],
-            "relevance_score": doc["score"],
-        }
-        for doc in retrieved_docs
-    ]
+    sources = format_sources(retrieved_docs)
 
     processing_time_ms = int((time.time() - start_time) * 1000)
 
