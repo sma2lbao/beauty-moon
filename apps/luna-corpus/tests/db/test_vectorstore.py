@@ -277,3 +277,72 @@ def test_server_backend_uses_http_client(monkeypatch, temp_chroma_dir):
         name="server_chunks",
         metadata={"description": "Document chunks for RAG"},
     )
+
+
+def test_parse_query_results_handles_missing_optional_keys(monkeypatch):
+    """Test that _parse_query_results handles missing optional response keys safely."""
+    from app.db import vectorstore
+
+    # Test 1: Missing all optional keys (only ids present)
+    results_only_ids = {
+        "ids": [["chunk-1", "chunk-2"]],
+    }
+    result = vectorstore._parse_query_results(results_only_ids)
+    assert len(result) == 2
+    assert result[0].chunk_id is None
+    assert result[0].document_id is None
+    assert result[0].content is None
+    assert result[0].score == 0.0
+
+    # Test 2: Missing metadatas key
+    results_no_metadatas = {
+        "ids": [["chunk-1"]],
+        "documents": [["Content 1"]],
+        "distances": [[0.1]],
+    }
+    result = vectorstore._parse_query_results(results_no_metadatas)
+    assert len(result) == 1
+    assert result[0].chunk_id is None
+    assert result[0].document_id is None
+    assert result[0].content == "Content 1"
+    assert result[0].score == 0.1
+
+    # Test 3: Missing documents key
+    results_no_documents = {
+        "ids": [["chunk-1"]],
+        "metadatas": [[{"chunk_id": "chunk-1", "document_id": "doc-1"}]],
+        "distances": [[0.2]],
+    }
+    result = vectorstore._parse_query_results(results_no_documents)
+    assert len(result) == 1
+    assert result[0].chunk_id == "chunk-1"
+    assert result[0].document_id == "doc-1"
+    assert result[0].content is None
+    assert result[0].score == 0.2
+
+    # Test 4: Missing distances key
+    results_no_distances = {
+        "ids": [["chunk-1"]],
+        "metadatas": [[{"chunk_id": "chunk-1", "document_id": "doc-1"}]],
+        "documents": [["Content 1"]],
+    }
+    result = vectorstore._parse_query_results(results_no_distances)
+    assert len(result) == 1
+    assert result[0].chunk_id == "chunk-1"
+    assert result[0].document_id == "doc-1"
+    assert result[0].content == "Content 1"
+    assert result[0].score == 0.0
+
+    # Test 5: Empty optional keys
+    results_empty_optional = {
+        "ids": [["chunk-1"]],
+        "metadatas": [],
+        "documents": [],
+        "distances": [],
+    }
+    result = vectorstore._parse_query_results(results_empty_optional)
+    assert len(result) == 1
+    assert result[0].chunk_id is None
+    assert result[0].document_id is None
+    assert result[0].content is None
+    assert result[0].score == 0.0

@@ -254,9 +254,24 @@ def _validate_knowledge_base_id(knowledge_base_id: str | None) -> None:
 def _parse_query_results(results: dict[str, Any]) -> list[VectorSearchResult]:
     output = []
     if results["ids"] and results["ids"][0]:
-        metadatas = results["metadatas"][0] if results["metadatas"] else []
-        documents = results["documents"][0] if results["documents"] else []
-        distances = results["distances"][0] if results["distances"] else []
+        metadatas = results.get("metadatas", [])
+        documents = results.get("documents",[])
+        distances = results.get("distances", [])
+
+        if metadatas:
+            metadatas = metadatas[0] if metadatas[0] else []
+        else:
+            metadatas = []
+
+        if documents:
+            documents = documents[0] if documents[0] else []
+        else:
+            documents = []
+
+        if distances:
+            distances = distances[0] if distances[0] else []
+        else:
+            distances = []
 
         for i, _chunk_id in enumerate(results["ids"][0]):
             metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
