@@ -33,6 +33,13 @@ class AppEnv(StrEnum):
     PRODUCTION = "production"
 
 
+class VectorStoreBackendType(StrEnum):
+    """Available vector store backends."""
+
+    CHROMA_LOCAL = "chroma_local"
+    CHROMA_SERVER = "chroma_server"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -44,10 +51,34 @@ class Settings(BaseSettings):
         description="MySQL database connection URL",
     )
 
-    # Chroma
+    # Vector Store / Chroma
+    vectorstore_backend: VectorStoreBackendType = Field(
+        default=VectorStoreBackendType.CHROMA_LOCAL,
+        description="Vector store backend to use",
+    )
+    chroma_collection_name: str = Field(
+        default="document_chunks",
+        description="Chroma collection name for document chunks",
+    )
     chroma_data_dir: Path = Field(
         default=Path("./data/chroma"),
-        description="Directory for Chroma vector store data",
+        description="Directory for local Chroma vector store data",
+    )
+    chroma_host: str = Field(
+        default="localhost",
+        description="Chroma server host",
+    )
+    chroma_port: int = Field(
+        default=8000,
+        description="Chroma server port",
+    )
+    chroma_ssl: bool = Field(
+        default=False,
+        description="Use SSL when connecting to Chroma server",
+    )
+    chroma_auth_token: str = Field(
+        default="",
+        description="Optional bearer token for Chroma server",
     )
 
     # LLM Provider

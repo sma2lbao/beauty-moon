@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import AppEnv, Settings
+from app.core.config import AppEnv, Settings, VectorStoreBackendType
 
 
 def test_default_environment_settings():
@@ -74,3 +74,30 @@ def test_production_accepts_explicit_cors_origin():
     )
 
     assert settings.cors_allow_origins == ["https://app.example.com"]
+
+
+def test_vectorstore_defaults_to_local_chroma():
+    settings = Settings()
+
+    assert settings.vectorstore_backend == VectorStoreBackendType.CHROMA_LOCAL
+    assert settings.chroma_collection_name == "document_chunks"
+    assert settings.chroma_host == "localhost"
+    assert settings.chroma_port == 8000
+    assert settings.chroma_ssl is False
+    assert settings.chroma_auth_token == ""
+
+
+def test_vectorstore_backend_accepts_chroma_server():
+    settings = Settings(
+        vectorstore_backend="chroma_server",
+        chroma_host="chroma.example.com",
+        chroma_port=8443,
+        chroma_ssl=True,
+        chroma_auth_token="secret-token",
+    )
+
+    assert settings.vectorstore_backend == VectorStoreBackendType.CHROMA_SERVER
+    assert settings.chroma_host == "chroma.example.com"
+    assert settings.chroma_port == 8443
+    assert settings.chroma_ssl is True
+    assert settings.chroma_auth_token == "secret-token"
