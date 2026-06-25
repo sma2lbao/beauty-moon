@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Annotated, AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
@@ -12,8 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.permissions import PermissionSlug
+from app.core.config import get_settings
 from app.db.database import get_db
-from app.db.models import Chunk, ContentStatus, Conversation, Document, Message, MessageRole
+from app.db.models import Chunk, ContentStatus, Conversation, Document, FileUpload, Message, MessageRole
+from app.services.ingestion.exceptions import DuplicateFileError, UnsupportedFileTypeError
+from app.services.ingestion.parsers import get_parser_registry
+from app.services.ingestion.service import IngestionService
+from app.services.ingestion.storage import get_storage_backend
 from app.graph.rag_graph import (
     answer_question,
     answer_question_multi_turn,
@@ -162,6 +167,38 @@ class MultiTurnAnswerResponse(BaseModel):
     conversation_id: str
     sources: list[SourceResponse]
     processing_time_ms: int
+
+
+class FileUploadResponse(BaseModel):
+    """File upload response model."""
+
+    id: str
+    knowledge_base_id: str
+    original_name: str
+    mime_type: str
+    size_bytes: int
+    content_hash: str
+    status: str
+    error_message: str | None
+    parsed_at: str | None
+    created_at: str
+    updated_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FileUploadListResponse(BaseModel):
+    """File upload list response."""
+
+    files: list[FileUploadResponse]
+    total: int
+
+
+class FileUploadCreateResponse(BaseModel):
+    """File upload creation response with document info."""
+
+    file: FileUploadResponse
+    document_id: str | None
 
 
 # Question Answering
@@ -848,6 +885,200 @@ async def stream_multi_turn_query(
     )
 
 
+# File Upload Management
+@router.post("/files/upload", response_model=FileUploadCreateResponse, status_code=status.HTTP_201_CREATED)
+async def upload_file(
+    file: UploadFile,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
+) -> FileUploadCreateResponse:
+    """Upload a file, parse it, and create a document.
+
+    Args:
+        file: Uploaded file
+        db: Database session
+        context: Request context with knowledge base scope
+
+    Returns:
+        Created file upload and document info
+    """
+    storage = get_storage_backend()
+    registry = get_parser_registry()
+    processor = DocumentProcessor()
+
+    service = IngestionService(
+        storage=storage,
+        parser_registry=registry,
+        processor=processor,
+        max_upload_size=get_settings().max_upload_size,
+        duplicate_policy=get_settings().upload_duplicate_policy,
+    )
+
+    try:
+        upload = await service.ingest_file(db, file, context.knowledge_base.id)
+    except UnsupportedFileTypeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(e),
+        ) from e
+    except DuplicateFileError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        # Re-raise HTTPExceptions as-is
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+    document_id = None
+    if upload.document:
+        document_id = upload.document.id
+
+    return FileUploadCreateResponse(
+        file=FileUploadResponse(
+            id=upload.id,
+            knowledge_base_id=upload.knowledge_base_id,
+            original_name=upload.original_name,
+            mime_type=upload.mime_type,
+            size_bytes=upload.size_bytes,
+            content_hash=upload.content_hash,
+            status=upload.status.value,
+            error_message=upload.error_message,
+            parsed_at=upload.parsed_at.isoformat() if upload.parsed_at else None,
+            created_at=upload.created_at.isoformat(),
+            updated_at=upload.updated_at.isoformat(),
+        ),
+        document_id=document_id,
+    )
+
+
+@router.get("/files", response_model=FileUploadListResponse)
+async def list_files(
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
+) -> FileUploadListResponse:
+    """List uploaded files for the knowledge base.
+
+    Args:
+        db: Database session
+        context: Request context with knowledge base scope
+
+    Returns:
+        List of file uploads
+    """
+    uploads = (
+        db.query(FileUpload)
+        .filter(FileUpload.knowledge_base_id == context.knowledge_base.id)
+        .order_by(FileUpload.created_at.desc())
+        .all()
+    )
+
+    return FileUploadListResponse(
+        files=[
+            FileUploadResponse(
+                id=u.id,
+                knowledge_base_id=u.knowledge_base_id,
+                original_name=u.original_name,
+                mime_type=u.mime_type,
+                size_bytes=u.size_bytes,
+                content_hash=u.content_hash,
+                status=u.status.value,
+                error_message=u.error_message,
+                parsed_at=u.parsed_at.isoformat() if u.parsed_at else None,
+                created_at=u.created_at.isoformat(),
+                updated_at=u.updated_at.isoformat(),
+            )
+            for u in uploads
+        ],
+        total=len(uploads),
+    )
+
+
+@router.get("/files/{file_id}", response_model=FileUploadResponse)
+async def get_file(
+    file_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
+) -> FileUploadResponse:
+    """Get a file upload record by ID.
+
+    Args:
+        file_id: File upload ID
+        db: Database session
+        context: Request context with knowledge base scope
+
+    Returns:
+        File upload record
+    """
+    upload = (
+        db.query(FileUpload)
+        .filter(
+            FileUpload.id == file_id,
+            FileUpload.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
+    if not upload:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileUploadResponse(
+        id=upload.id,
+        knowledge_base_id=upload.knowledge_base_id,
+        original_name=upload.original_name,
+        mime_type=upload.mime_type,
+        size_bytes=upload.size_bytes,
+        content_hash=upload.content_hash,
+        status=upload.status.value,
+        error_message=upload.error_message,
+        parsed_at=upload.parsed_at.isoformat() if upload.parsed_at else None,
+        created_at=upload.created_at.isoformat(),
+        updated_at=upload.updated_at.isoformat(),
+    )
+
+
+@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_file(
+    file_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_DELETE)),
+    ],
+) -> None:
+    """Delete a file and its associated document.
+
+    Args:
+        file_id: File upload ID
+        db: Database session
+        context: Request context with knowledge base scope
+    """
+    storage = get_storage_backend()
+    processor = DocumentProcessor()
+    registry = get_parser_registry()
+
+    service = IngestionService(
+        storage=storage,
+        parser_registry=registry,
+        processor=processor,
+    )
+
+    await service.delete_file(db, file_id, context.knowledge_base.id)
+
+
 # Health Check
 @router.get("/health", response_model=HealthResponse)
 async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthResponse:
@@ -859,7 +1090,6 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
     Returns:
         Health status
     """
-    from app.core.config import get_settings
     from app.db.vectorstore import get_vector_store
     from app.services.llm import check_ark_health, check_ollama_health
 
