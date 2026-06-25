@@ -1,16 +1,18 @@
 """Agent API routes."""
 import json
 import time
-from typing import Any, AsyncGenerator
+from typing import Annotated, Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.factory import AgentFactory
 from app.agent.registry import ToolRegistry
 from app.agent.tool import Tool
-from app.agent.tools import rag_search_tool, calculator_tool, current_time_tool
+from app.agent.tools import calculator_tool, create_rag_search_tool, current_time_tool
+from app.api.auth import AuthenticatedRequestContext, require_permission
+from app.auth.permissions import PermissionSlug
 from app.core.config import AgentMode, get_settings
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -64,10 +66,10 @@ class ToolRegisterRequest(BaseModel):
     parameters_schema: dict[str, Any]
 
 
-def get_default_registry() -> ToolRegistry:
+def get_default_registry(knowledge_base_id: str) -> ToolRegistry:
     """Get default tool registry with built-in tools and persisted registrations."""
     registry = ToolRegistry()
-    registry.register(rag_search_tool)
+    registry.register(create_rag_search_tool(knowledge_base_id))
     registry.register(calculator_tool)
     registry.register(current_time_tool)
     for tool in _registered_tools.values():
@@ -75,14 +77,32 @@ def get_default_registry() -> ToolRegistry:
     return registry
 
 
+def filter_registry(registry: ToolRegistry, available_tools: list[str] | None) -> ToolRegistry:
+    """Filter a registry by requested tool names, preserving empty-list semantics."""
+    if available_tools is None:
+        return registry
+
+    filtered_registry = ToolRegistry()
+    for tool_name in available_tools:
+        tool = registry.get(tool_name)
+        if tool:
+            filtered_registry.register(tool)
+    return filtered_registry
+
+
 @router.post("/query", response_model=AgentQueryResponse)
 async def query(
     request: AgentQueryRequest,
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
 ) -> AgentQueryResponse:
     """Query the agent.
 
     Args:
         request: Query request
+        context: Request context with knowledge base scope
 
     Returns:
         Agent response
@@ -97,16 +117,10 @@ async def query(
         raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
 
     # Get tools
-    registry = get_default_registry()
-
-    # Filter by available_tools if specified
-    if request.available_tools is not None:
-        filtered_registry = ToolRegistry()
-        for tool_name in request.available_tools:
-            tool = registry.get(tool_name)
-            if tool:
-                filtered_registry.register(tool)
-        registry = filtered_registry
+    registry = filter_registry(
+        get_default_registry(context.knowledge_base.id),
+        request.available_tools,
+    )
 
     # Create agent
     agent = AgentFactory.create(
@@ -159,11 +173,18 @@ async def agent_stream_generator(
 
 
 @router.post("/stream")
-async def stream_query(request: AgentQueryRequest):
+async def stream_query(
+    request: AgentQueryRequest,
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
+):
     """Stream agent query response.
 
     Args:
         request: Query request
+        context: Request context with knowledge base scope
 
     Returns:
         StreamingResponse
@@ -173,14 +194,10 @@ async def stream_query(request: AgentQueryRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
 
-    registry = get_default_registry()
-    if request.available_tools is not None:
-        filtered_registry = ToolRegistry()
-        for tool_name in request.available_tools:
-            tool = registry.get(tool_name)
-            if tool:
-                filtered_registry.register(tool)
-        registry = filtered_registry
+    registry = filter_registry(
+        get_default_registry(context.knowledge_base.id),
+        request.available_tools,
+    )
 
     return StreamingResponse(
         agent_stream_generator(request.query, mode, registry),
@@ -194,13 +211,21 @@ async def stream_query(request: AgentQueryRequest):
 
 
 @router.get("/tools", response_model=ToolListResponse)
-async def list_tools() -> ToolListResponse:
+async def list_tools(
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.KNOWLEDGE_BASE_READ)),
+    ],
+) -> ToolListResponse:
     """List all available tools.
+
+    Args:
+        context: Request context with knowledge base scope
 
     Returns:
         List of tools
     """
-    registry = get_default_registry()
+    registry = get_default_registry(context.knowledge_base.id)
     tools = [
         ToolInfo(
             name=tool.name,
@@ -214,11 +239,18 @@ async def list_tools() -> ToolListResponse:
 
 
 @router.post("/tools")
-async def register_tool(request: ToolRegisterRequest):
+async def register_tool(
+    request: ToolRegisterRequest,
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.KNOWLEDGE_BASE_MANAGE)),
+    ],
+):
     """Register a new tool.
 
     Args:
         request: Tool registration request
+        context: Request context with knowledge base scope
 
     Returns:
         Success message
@@ -235,8 +267,16 @@ async def register_tool(request: ToolRegisterRequest):
 
 
 @router.get("/modes")
-async def list_modes():
+async def list_modes(
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.KNOWLEDGE_BASE_READ)),
+    ],
+):
     """List available agent modes.
+
+    Args:
+        context: Request context with knowledge base scope
 
     Returns:
         List of modes
