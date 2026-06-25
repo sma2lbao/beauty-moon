@@ -1,6 +1,5 @@
-"""Tests for ingestion ingestion storage backend."""
+"""Tests for ingestion storage backend."""
 import io
-from pathlib import Path
 
 import pytest
 from fastapi import UploadFile

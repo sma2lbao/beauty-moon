@@ -1,4 +1,5 @@
 """Storage backend abstraction and local filesystem implementation."""
+from pathlib import Path
 from typing import Protocol
 
 from fastapi import UploadFile
@@ -36,8 +37,6 @@ class LocalStorageBackend:
         Args:
             base_path: Base directory for file storage. Defaults to settings.
         """
-        from pathlib import Path
-
         if base_path is None:
             base_path = get_settings().storage_local_path
         self.base_path = Path(base_path)
@@ -53,8 +52,6 @@ class LocalStorageBackend:
         Returns:
             Stored path (same as input path)
         """
-        from pathlib import Path
-
         target = self.base_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         content = await file.read()
@@ -74,8 +71,6 @@ class LocalStorageBackend:
         Raises:
             StorageError: If file does not exist
         """
-        from pathlib import Path
-
         target = self.base_path / path
         if not target.exists():
             raise StorageError(f"File not found: {path}")
@@ -90,8 +85,6 @@ class LocalStorageBackend:
         Raises:
             StorageError: If file does not exist
         """
-        from pathlib import Path
-
         target = self.base_path / path
         if not target.exists():
             raise StorageError(f"File not found: {path}")
@@ -102,7 +95,7 @@ class LocalStorageBackend:
         return None
 
 
-def get_storage_backend() -> LocalStorageBackend:
+def get_storage_backend() -> StorageBackend:
     """Get configured storage backend instance.
 
     Returns:
