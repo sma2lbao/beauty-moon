@@ -136,3 +136,59 @@ def test_markdown_parser_parse():
     assert "Hello" in result
     assert "This is bold text." in result
     assert "#" not in result
+
+
+def test_parser_registry_register_and_get():
+    """Test registering and retrieving parsers."""
+    from app.services.ingestion.parsers import ParserRegistry, PlainTextParser
+
+    registry = ParserRegistry()
+    parser = PlainTextParser()
+    registry.register(parser)
+
+    assert registry.get_parser("text/plain") is parser
+
+
+def test_parser_registry_is_supported():
+    """Test checking supported MIME types."""
+    from app.services.ingestion.parsers import ParserRegistry, PlainTextParser
+
+    registry = ParserRegistry()
+    registry.register(PlainTextParser())
+
+    assert registry.is_supported("text/plain") is True
+    assert registry.is_supported("application/pdf") is False
+
+
+def test_parser_registry_unsupported_type():
+    """Test getting parser for unsupported type raises error."""
+    from app.services.ingestion.parsers import ParserRegistry
+
+    registry = ParserRegistry()
+    with pytest.raises(UnsupportedFileTypeError, match="Unsupported file type"):
+        registry.get_parser("application/unknown")
+
+
+def test_parser_registry_list_supported_types():
+    """Test listing supported MIME types."""
+    from app.services.ingestion.parsers import ParserRegistry, PlainTextParser
+
+    registry = ParserRegistry()
+    registry.register(PlainTextParser())
+
+    types = registry.list_supported_types()
+    assert "text/plain" in types
+
+
+def test_default_parser_registry_has_all_parsers():
+    """Test default registry includes all built-in parsers."""
+    from app.services.ingestion.parsers import get_parser_registry
+
+    registry = get_parser_registry()
+    assert registry.is_supported("text/plain")
+    assert registry.is_supported("application/pdf")
+    assert registry.is_supported(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert registry.is_supported("text/html")
+    assert registry.is_supported("text/markdown")

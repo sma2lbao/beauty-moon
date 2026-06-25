@@ -1,7 +1,7 @@
 """Document parser protocol and built-in implementations."""
 from typing import Protocol
 
-from app.services.ingestion.exceptions import ParseError
+from app.services.ingestion.exceptions import ParseError, UnsupportedFileTypeError
 
 
 class DocumentParser(Protocol):
@@ -200,3 +200,75 @@ class MarkdownParser:
             return text.strip()
         except UnicodeDecodeError as e:
             raise ParseError(f"Failed to decode Markdown file: {e}") from e
+
+
+class ParserRegistry:
+    """Registry for document parsers by MIME type."""
+
+    def __init__(self):
+        """Initialize empty registry."""
+        self._parsers: dict[str, DocumentParser] = {}
+
+    def register(self, parser: DocumentParser) -> None:
+        """Register a parser for its supported MIME types.
+
+        Args:
+            parser: Document parser instance
+        """
+        for mime_type in parser.supported_mime_types:
+            self._parsers[mime_type] = parser
+
+    def get_parser(self, mime_type: str) -> DocumentParser:
+        """Get parser for a MIME type.
+
+        Args:
+            mime_type: MIME type string
+
+        Returns:
+            DocumentParser instance
+
+        Raises:
+            UnsupportedFileTypeError: If MIME type is not supported
+        """
+        parser = self._parsers.get(mime_type)
+        if parser is None:
+            supported = ", ".join(sorted(self._parsers.keys()))
+            raise UnsupportedFileTypeError(
+                f"Unsupported file type: {mime_type}. "
+                f"Supported types: {supported}"
+            )
+        return parser
+
+    def is_supported(self, mime_type: str) -> bool:
+        """Check if a MIME type is supported.
+
+        Args:
+            mime_type: MIME type string
+
+        Returns:
+            True if supported
+        """
+        return mime_type in self._parsers
+
+    def list_supported_types(self) -> list[str]:
+        """List all supported MIME types.
+
+        Returns:
+            Sorted list of MIME types
+        """
+        return sorted(self._parsers.keys())
+
+
+def get_parser_registry() -> ParserRegistry:
+    """Get default parser registry with all built-in parsers.
+
+    Returns:
+        Configured ParserRegistry
+    """
+    registry = ParserRegistry()
+    registry.register(PlainTextParser())
+    registry.register(PyPDFParser())
+    registry.register(DocxParser())
+    registry.register(HTMLParser())
+    registry.register(MarkdownParser())
+    return registry
