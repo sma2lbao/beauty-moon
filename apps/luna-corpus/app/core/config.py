@@ -175,6 +175,16 @@ class Settings(BaseSettings):
         default=10, description="Max steps in a plan"
     )
 
+    # Ingestion / File Storage
+    storage_backend: str = Field(
+        default="local",
+        description="Storage backend to use (local, s3, etc.)",
+    )
+    storage_local_path: Path = Field(
+        default=Path("./data/uploads"),
+        description="Local directory for file storage when using local backend",
+    )
+
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def parse_cors_allow_origins(cls, value: Any) -> list[str]:
