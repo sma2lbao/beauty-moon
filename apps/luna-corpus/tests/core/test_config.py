@@ -1,5 +1,7 @@
 """Tests for application configuration."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -101,3 +103,30 @@ def test_vectorstore_backend_accepts_chroma_server():
     assert settings.chroma_port == 8443
     assert settings.chroma_ssl is True
     assert settings.chroma_auth_token == "secret-token"
+
+
+def test_default_storage_config():
+    """Test default storage configuration values."""
+    from app.core.config import Settings
+
+    settings = Settings()
+    assert settings.storage_backend == "local"
+    assert settings.storage_local_path == Path("data/uploads")
+    assert settings.max_upload_size == 52428800
+    assert settings.upload_duplicate_policy == "reject"
+
+
+def test_custom_storage_config():
+    """Test custom storage configuration."""
+    from app.core.config import Settings
+
+    settings = Settings(
+        storage_backend="s3",
+        storage_local_path="/tmp/uploads",
+        max_upload_size=10485760,
+        upload_duplicate_policy="replace",
+    )
+    assert settings.storage_backend == "s3"
+    assert settings.storage_local_path == Path("/tmp/uploads")
+    assert settings.max_upload_size == 10485760
+    assert settings.upload_duplicate_policy == "replace"

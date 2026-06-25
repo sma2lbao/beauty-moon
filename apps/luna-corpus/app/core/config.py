@@ -184,6 +184,14 @@ class Settings(BaseSettings):
         default=Path("./data/uploads"),
         description="Local directory for file storage when using local backend",
     )
+    max_upload_size: int = Field(
+        default=52428800,
+        description="Maximum upload file size in bytes (50MB)",
+    )
+    upload_duplicate_policy: str = Field(
+        default="reject",
+        description="Duplicate file policy: reject or replace",
+    )
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
