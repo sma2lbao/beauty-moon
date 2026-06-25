@@ -43,3 +43,96 @@ def test_plain_text_parser_parse_empty():
     content = b""
     result = parser.parse(content, "test.txt")
     assert result == ""
+
+
+def test_pdf_parser_mime_types():
+    """Test PDF parser supported MIME types."""
+    from app.services.ingestion.parsers import PyPDFParser
+
+    parser = PyPDFParser()
+    assert "application/pdf" in parser.supported_mime_types
+
+
+def test_pdf_parser_parse():
+    """Test parsing a simple PDF."""
+    import io
+    from pypdf import PdfWriter
+    from app.services.ingestion.parsers import PyPDFParser
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    pdf_bytes = io.BytesIO()
+    writer.write(pdf_bytes)
+    pdf_bytes.seek(0)
+
+    parser = PyPDFParser()
+    result = parser.parse(pdf_bytes.read(), "test.pdf")
+    assert isinstance(result, str)
+
+
+def test_docx_parser_mime_types():
+    """Test DOCX parser supported MIME types."""
+    from app.services.ingestion.parsers import DocxParser
+
+    parser = DocxParser()
+    assert (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        in parser.supported_mime_types
+    )
+
+
+def test_docx_parser_parse():
+    """Test parsing a simple DOCX."""
+    import io
+    from docx import Document as DocxDocument
+    from app.services.ingestion.parsers import DocxParser
+
+    doc = DocxDocument()
+    doc.add_paragraph("Hello, world!")
+    docx_bytes = io.BytesIO()
+    doc.save(docx_bytes)
+    docx_bytes.seek(0)
+
+    parser = DocxParser()
+    result = parser.parse(docx_bytes.read(), "test.docx")
+    assert "Hello, world!" in result
+
+
+def test_html_parser_mime_types():
+    """Test HTML parser supported MIME types."""
+    from app.services.ingestion.parsers import HTMLParser
+
+    parser = HTMLParser()
+    assert "text/html" in parser.supported_mime_types
+
+
+def test_html_parser_parse():
+    """Test parsing HTML to text."""
+    from app.services.ingestion.parsers import HTMLParser
+
+    parser = HTMLParser()
+    html = b"<html><body><p>Hello, world!</p></body></html>"
+    result = parser.parse(html, "test.html")
+    assert "Hello, world!" in result
+    assert "<html>" not in result
+
+
+def test_markdown_parser_mime_types():
+    """Test Markdown parser supported MIME types."""
+    from app.services.ingestion.parsers import MarkdownParser
+
+    parser = MarkdownParser()
+    assert "text/markdown" in parser.supported_mime_types
+    assert "text/x-markdown" in parser.supported_mime_types
+
+
+def test_markdown_parser_parse():
+    """Test parsing Markdown to text."""
+    from app.services.ingestion.parsers import MarkdownParser
+
+    parser = MarkdownParser()
+    md = b"# Hello\n\nThis is **bold** text."
+    result = parser.parse(md, "test.md")
+    assert "Hello" in result
+    assert "This is bold text." in result
+    assert "#" not in result
