@@ -1,33 +1,42 @@
-"""RAG search tool - wraps existing vector store."""
-from app.agent.tool import tool
+"""Knowledge-base scoped RAG search tool."""
+from app.agent.tool import Tool, tool
 from app.db.vectorstore import search_vectorstore
 from app.services.llm import embed_text
 
 
-def _get_rag_results(query: str, top_k: int = 5) -> str:
-    """Execute RAG search and format results.
+_RAG_SEARCH_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "The search query to find relevant documents",
+        },
+        "top_k": {
+            "type": "integer",
+            "description": "Maximum number of documents to return",
+            "default": 5,
+        },
+    },
+    "required": ["query"],
+}
 
-    Args:
-        query: Search query
-        top_k: Number of results to return
 
-    Returns:
-        Formatted search results
-    """
+def _format_rag_results(query: str, knowledge_base_id: str, top_k: int = 5) -> str:
+    """Execute scoped RAG search and format results."""
     try:
-        # Generate query embedding
         query_embedding = embed_text(query)
-
-        # Search vector store
-        results = search_vectorstore(query_embedding, top_k=top_k)
+        results = search_vectorstore(
+            query_embedding,
+            top_k=top_k,
+            knowledge_base_id=knowledge_base_id,
+        )
 
         if not results:
             return "No relevant documents found in the knowledge base."
 
-        # Format results
         formatted = []
         for i, result in enumerate(results, 1):
-            content = result.get("content", "")
+            content = result.get("content", "") or ""
             score = result.get("score", 0.0)
             doc_id = result.get("document_id", "unknown")
             formatted.append(
@@ -41,26 +50,22 @@ def _get_rag_results(query: str, top_k: int = 5) -> str:
         return f"Error searching knowledge base: {str(e)}"
 
 
-rag_search_tool = tool(
-    name="rag_search",
-    description=(
-        "Search the knowledge base for relevant documents. "
-        "Use this when the user asks about information that might be "
-        "in your documents."
-    ),
-    parameters_schema={
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The search query to find relevant documents",
-            },
-            "top_k": {
-                "type": "integer",
-                "description": "Maximum number of documents to return",
-                "default": 5,
-            },
-        },
-        "required": ["query"],
-    },
-)(_get_rag_results)
+def create_rag_search_tool(knowledge_base_id: str) -> Tool:
+    """Create a RAG search tool scoped to one knowledge base."""
+
+    def _get_rag_results(query: str, top_k: int = 5) -> str:
+        return _format_rag_results(
+            query=query,
+            top_k=top_k,
+            knowledge_base_id=knowledge_base_id,
+        )
+
+    return tool(
+        name="rag_search",
+        description=(
+            "Search the current knowledge base for relevant documents. "
+            "Use this when the user asks about information that might be "
+            "in the current documents."
+        ),
+        parameters_schema=_RAG_SEARCH_PARAMETERS,
+    )(_get_rag_results)
