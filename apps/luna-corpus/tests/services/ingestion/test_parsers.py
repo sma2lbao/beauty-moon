@@ -23,7 +23,7 @@ def test_plain_text_parser_parse():
 def test_plain_text_parser_parse_utf8():
     """Test parsing UTF-8 text with special characters."""
     parser = PlainTextParser()
-    content = "你好，世界！".encode("utf-8")
+    content = "你好，世界！".encode()
     result = parser.parse(content, "test.txt")
     assert result == "你好，世界！"
 
@@ -56,7 +56,9 @@ def test_pdf_parser_mime_types():
 def test_pdf_parser_parse():
     """Test parsing a simple PDF."""
     import io
+
     from pypdf import PdfWriter
+
     from app.services.ingestion.parsers import PyPDFParser
 
     writer = PdfWriter()
@@ -84,7 +86,9 @@ def test_docx_parser_mime_types():
 def test_docx_parser_parse():
     """Test parsing a simple DOCX."""
     import io
+
     from docx import Document as DocxDocument
+
     from app.services.ingestion.parsers import DocxParser
 
     doc = DocxDocument()

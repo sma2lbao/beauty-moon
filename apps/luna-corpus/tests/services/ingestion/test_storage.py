@@ -74,7 +74,10 @@ async def test_local_storage_delete_not_found(local_backend):
 def test_get_storage_backend_returns_local(monkeypatch, tmp_path):
     """Test factory returns LocalStorageBackend by default."""
     from app.core.config import Settings
-    settings = Settings(storage_backend="local", storage_local_path=tmp_path / "uploads")
+    settings = Settings(
+        storage_backend="local",
+        storage_local_path=tmp_path / "uploads",
+    )
     monkeypatch.setattr("app.services.ingestion.storage.get_settings", lambda: settings)
     backend = get_storage_backend()
     assert isinstance(backend, LocalStorageBackend)
