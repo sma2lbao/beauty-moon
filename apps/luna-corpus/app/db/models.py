@@ -36,6 +36,14 @@ class ContentStatus(str, enum.Enum):
     ERROR = "error"
 
 
+class FileUploadStatus(str, enum.Enum):
+    """File upload processing status."""
+
+    UPLOADED = "uploaded"
+    PARSED = "parsed"
+    ERROR = "error"
+
+
 class ContentType(str, enum.Enum):
     """Type of content in a chunk."""
 
@@ -259,6 +267,45 @@ class KnowledgeBase(Base):
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="knowledge_base", cascade="all, delete-orphan"
     )
+    file_uploads: Mapped[list["FileUpload"]] = relationship(
+        "FileUpload", back_populates="knowledge_base", cascade="all, delete-orphan"
+    )
+
+
+class FileUpload(Base):
+    """Uploaded file record."""
+
+    __tablename__ = "file_uploads"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
+    )
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[FileUploadStatus] = mapped_column(
+        Enum(FileUploadStatus), default=FileUploadStatus.UPLOADED
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    knowledge_base: Mapped[KnowledgeBase] = relationship(
+        "KnowledgeBase", back_populates="file_uploads"
+    )
+    document: Mapped["Document"] = relationship(
+        "Document", back_populates="file", uselist=False
+    )
 
 
 class Document(Base):
@@ -271,6 +318,9 @@ class Document(Base):
     )
     knowledge_base_id: Mapped[str] = mapped_column(
         CHAR(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
+    )
+    file_id: Mapped[str | None] = mapped_column(
+        CHAR(36), ForeignKey("file_uploads.id"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str | None] = mapped_column(String(1000), nullable=True)
@@ -293,6 +343,9 @@ class Document(Base):
     )
     knowledge_base: Mapped["KnowledgeBase"] = relationship(
         "KnowledgeBase", back_populates="documents"
+    )
+    file: Mapped["FileUpload | None"] = relationship(
+        "FileUpload", back_populates="document"
     )
 
 

@@ -291,3 +291,55 @@ def test_workspace_membership_role_relationship(db_session):
 
     assert membership.roles == [role]
     assert role.workspace_memberships == [membership]
+
+
+def test_file_upload_creation(db_session):
+    """Test creating a file upload record."""
+    from app.db.models import FileUpload
+
+    _, _, knowledge_base = create_knowledge_base(db_session)
+    upload = FileUpload(
+        knowledge_base_id=knowledge_base.id,
+        original_name="report.pdf",
+        stored_name="kb-1/abc/report.pdf",
+        mime_type="application/pdf",
+        size_bytes=1024,
+        content_hash="abc123",
+        status="uploaded",
+    )
+    db_session.add(upload)
+    db_session.commit()
+
+    assert upload.id is not None
+    assert upload.original_name == "report.pdf"
+    assert upload.status == "uploaded"
+
+
+def test_document_with_file_id(db_session):
+    """Test creating a document linked to a file upload."""
+    from app.db.models import FileUpload, FileUploadStatus
+
+    _, _, knowledge_base = create_knowledge_base(db_session)
+    upload = FileUpload(
+        knowledge_base_id=knowledge_base.id,
+        original_name="report.pdf",
+        stored_name="kb-1/abc/report.pdf",
+        mime_type="application/pdf",
+        size_bytes=1024,
+        content_hash="abc123",
+        status=FileUploadStatus.UPLOADED,
+    )
+    db_session.add(upload)
+    db_session.commit()
+
+    doc = Document(
+        title="Report",
+        content="Parsed content",
+        knowledge_base_id=knowledge_base.id,
+        file_id=upload.id,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    assert doc.file_id == upload.id
+    assert doc.file == upload
