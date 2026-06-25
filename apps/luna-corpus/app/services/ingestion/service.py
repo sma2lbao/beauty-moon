@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
+from app.db.vectorstore import delete_chunks_from_vectorstore
 from app.services.document_processor import DocumentProcessor
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
@@ -88,7 +89,7 @@ class IngestionService:
         self.max_upload_size = max_upload_size
         self.duplicate_policy = duplicate_policy
 
-    def ingest_file(
+    async def ingest_file(
         self,
         db: Session,
         file: UploadFile,
@@ -144,7 +145,7 @@ class IngestionService:
                     f"File already exists: {existing.original_name}"
                 )
             # replace policy: delete old file and continue
-            self.delete_file(db, existing.id, knowledge_base_id)
+            await self.delete_file(db, existing.id, knowledge_base_id)
 
         # Generate storage path and save file
         filename = file.filename or "unknown"
@@ -153,7 +154,7 @@ class IngestionService:
         # Create FileUpload record first
         upload = FileUpload(
             knowledge_base_id=knowledge_base_id,
-            original_name=file.filename or "unknown",
+            original_name=filename,
             stored_name=stored_name,
             mime_type=mime_type,
             size_bytes=file.size or len(content),
@@ -166,19 +167,19 @@ class IngestionService:
 
         try:
             # Save to storage
-            self.storage.save(file, stored_name)
+            await self.storage.save(file, stored_name)
 
             # Parse content
             parser = self.parser_registry.get_parser(mime_type)
-            parsed_text = parser.parse(content, file.filename or "unknown")
+            parsed_text = parser.parse(content, filename)
 
             # Create Document
             document = Document(
                 knowledge_base_id=knowledge_base_id,
                 file_id=upload.id,
-                title=file.filename or "Untitled",
+                title=filename or "Untitled",
                 content=parsed_text,
-                source=f"file://{file.filename}",
+                source=f"file://{filename}",
                 has_tables="|" in parsed_text and "---" in parsed_text,
                 has_code="```" in parsed_text or "def " in parsed_text,
                 status=ContentStatus.PENDING,
@@ -204,7 +205,7 @@ class IngestionService:
             db.commit()
             # Clean up stored file
             with contextlib.suppress(StorageError):
-                self.storage.delete(stored_name)
+                await self.storage.delete(stored_name)
             return upload
 
         except Exception as e:
@@ -214,7 +215,10 @@ class IngestionService:
             # Rollback: delete document if created
             doc = (
                 db.query(Document)
-                .filter(Document.file_id == upload.id)
+                .filter(
+                    Document.file_id == upload.id,
+                    Document.knowledge_base_id == knowledge_base_id,
+                )
                 .first()
             )
             if doc:
@@ -222,10 +226,10 @@ class IngestionService:
                 db.commit()
             # Clean up stored file
             with contextlib.suppress(StorageError):
-                self.storage.delete(stored_name)
+                await self.storage.delete(stored_name)
             return upload
 
-    def delete_file(
+    async def delete_file(
         self,
         db: Session,
         file_id: str,
@@ -255,13 +259,17 @@ class IngestionService:
                 detail="File not found",
             )
 
-        # Delete associated document (which cascades to chunks and vectors)
+        # Delete chunks from vector store before deleting document
+        if upload.document and upload.document.chunks:
+            delete_chunks_from_vectorstore([c.id for c in upload.document.chunks])
+
+        # Delete associated document (which cascades to chunks in SQL)
         if upload.document:
             db.delete(upload.document)
 
         # Delete from storage
         with contextlib.suppress(StorageError):
-            self.storage.delete(upload.stored_name)
+            await self.storage.delete(upload.stored_name)
 
         # Delete upload record
         db.delete(upload)

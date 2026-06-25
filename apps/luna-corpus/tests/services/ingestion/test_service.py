@@ -1,5 +1,5 @@
 """Tests for ingestion service."""
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -30,8 +30,8 @@ def _mock_upload_file(filename, content_type, size, content):
 def mock_storage():
     """Create mock storage backend."""
     storage = MagicMock()
-    storage.save = MagicMock(return_value="kb-1/abc/test.pdf")
-    storage.delete = MagicMock()
+    storage.save = AsyncMock(return_value="kb-1/abc/test.pdf")
+    storage.delete = AsyncMock()
     return storage
 
 
@@ -66,7 +66,8 @@ def ingestion_service(mock_storage, mock_parser_registry, mock_processor):
     )
 
 
-def test_ingest_file_success(ingestion_service, mock_storage, mock_processor):
+@pytest.mark.asyncio
+async def test_ingest_file_success(ingestion_service, mock_storage, mock_processor):
     """Test successful file ingestion."""
     db = MagicMock()
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
@@ -74,7 +75,7 @@ def test_ingest_file_success(ingestion_service, mock_storage, mock_processor):
     # Mock hash check - no duplicate
     db.query.return_value.filter.return_value.first.return_value = None
 
-    result = ingestion_service.ingest_file(db, file, "kb-1")
+    result = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert isinstance(result, FileUpload)
     assert result.status == FileUploadStatus.PARSED
@@ -84,7 +85,8 @@ def test_ingest_file_success(ingestion_service, mock_storage, mock_processor):
     db.commit.assert_called()
 
 
-def test_ingest_file_unsupported_type(ingestion_service, mock_parser_registry):
+@pytest.mark.asyncio
+async def test_ingest_file_unsupported_type(ingestion_service, mock_parser_registry):
     """Test ingestion with unsupported file type."""
     mock_parser_registry.is_supported.return_value = False
 
@@ -92,20 +94,22 @@ def test_ingest_file_unsupported_type(ingestion_service, mock_parser_registry):
     file = _mock_upload_file("test.unknown", "application/unknown", 1024, b"test")
 
     with pytest.raises(UnsupportedFileTypeError):
-        ingestion_service.ingest_file(db, file, "kb-1")
+        await ingestion_service.ingest_file(db, file, "kb-1")
 
 
-def test_ingest_file_too_large(ingestion_service):
+@pytest.mark.asyncio
+async def test_ingest_file_too_large(ingestion_service):
     """Test ingestion with file exceeding size limit."""
     db = MagicMock()
     file = _mock_upload_file("huge.pdf", "application/pdf", 100_000_000, b"x" * 100)
 
     with pytest.raises(HTTPException) as exc:
-        ingestion_service.ingest_file(db, file, "kb-1")
+        await ingestion_service.ingest_file(db, file, "kb-1")
     assert exc.value.status_code == 413
 
 
-def test_ingest_file_duplicate_reject(ingestion_service):
+@pytest.mark.asyncio
+async def test_ingest_file_duplicate_reject(ingestion_service):
     """Test duplicate file rejection."""
     db = MagicMock()
     # Simulate existing file with same hash
@@ -115,10 +119,44 @@ def test_ingest_file_duplicate_reject(ingestion_service):
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
     with pytest.raises(DuplicateFileError):
-        ingestion_service.ingest_file(db, file, "kb-1")
+        await ingestion_service.ingest_file(db, file, "kb-1")
 
 
-def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
+@pytest.mark.asyncio
+async def test_ingest_file_duplicate_replace(
+    mock_storage, mock_parser_registry, mock_processor
+):
+    """Test duplicate file replace policy."""
+    service = IngestionService(
+        storage=mock_storage,
+        parser_registry=mock_parser_registry,
+        processor=mock_processor,
+        max_upload_size=52428800,
+        duplicate_policy="replace",
+    )
+    db = MagicMock()
+    existing = MagicMock()
+    existing.id = "existing-id"
+    existing.original_name = "old.pdf"
+    existing.stored_name = "kb-1/old/old.pdf"
+    existing.document = None
+    db.query.return_value.filter.return_value.first.side_effect = [
+        existing,  # duplicate check in ingest_file
+        existing,  # lookup in delete_file
+        None,      # no duplicate after delete
+    ]
+
+    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+
+    result = await service.ingest_file(db, file, "kb-1")
+
+    assert isinstance(result, FileUpload)
+    mock_storage.delete.assert_called_once()
+    db.delete.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
     """Test handling of parse errors."""
     parser = MagicMock()
     parser.parse = MagicMock(side_effect=ParseError("Corrupted file"))
@@ -129,35 +167,81 @@ def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
 
     file = _mock_upload_file("corrupted.pdf", "application/pdf", 1024, b"bad content")
 
-    result = ingestion_service.ingest_file(db, file, "kb-1")
+    result = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert result.status == FileUploadStatus.ERROR
     assert "Corrupted file" in result.error_message
 
 
-def test_delete_file(ingestion_service, mock_storage):
+@pytest.mark.asyncio
+async def test_ingest_file_generic_exception_rollback(
+    ingestion_service, mock_parser_registry, mock_storage
+):
+    """Test generic exception triggers document rollback and storage cleanup."""
+    parser = MagicMock()
+    parser.parse = MagicMock(return_value="Parsed content")
+    mock_parser_registry.get_parser.return_value = parser
+
+    db = MagicMock()
+    doc = MagicMock()
+    db.query.return_value.filter.return_value.first.side_effect = [
+        None,  # duplicate check
+        doc,   # document rollback found
+    ]
+
+    # Simulate a failure during processor.process_document
+    ingestion_service.processor.process_document = MagicMock(
+        side_effect=RuntimeError("Processor failed")
+    )
+
+    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+
+    result = await ingestion_service.ingest_file(db, file, "kb-1")
+
+    assert result.status == FileUploadStatus.ERROR
+    assert "Processor failed" in result.error_message
+
+    # Verify document rollback query includes knowledge_base_id filter
+    rollback_query = db.query.return_value.filter
+    assert rollback_query.call_count == 2  # once for duplicate check, once for rollback
+    # Document was deleted
+    db.delete.assert_called_once_with(doc)
+    # Storage cleanup
+    mock_storage.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_file(ingestion_service, mock_storage):
     """Test deleting a file and its document."""
     db = MagicMock()
     upload = MagicMock()
     upload.stored_name = "kb-1/abc/test.pdf"
     upload.document = MagicMock()
     upload.document.id = "doc-1"
+    chunk_mock = MagicMock()
+    chunk_mock.id = "chunk-1"
+    upload.document.chunks = [chunk_mock]
     upload.knowledge_base_id = "kb-1"
 
     db.query.return_value.filter.return_value.first.return_value = upload
 
-    ingestion_service.delete_file(db, "upload-1", "kb-1")
+    with patch(
+        "app.services.ingestion.service.delete_chunks_from_vectorstore"
+    ) as mock_del_vectors:
+        await ingestion_service.delete_file(db, "upload-1", "kb-1")
 
+    mock_del_vectors.assert_called_once_with(["chunk-1"])
     mock_storage.delete.assert_called_once_with("kb-1/abc/test.pdf")
     db.delete.assert_called()
     db.commit.assert_called()
 
 
-def test_delete_file_not_found(ingestion_service):
+@pytest.mark.asyncio
+async def test_delete_file_not_found(ingestion_service):
     """Test deleting a non-existent file."""
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None
 
     with pytest.raises(HTTPException) as exc:
-        ingestion_service.delete_file(db, "missing", "kb-1")
+        await ingestion_service.delete_file(db, "missing", "kb-1")
     assert exc.value.status_code == 404
