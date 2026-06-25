@@ -8,13 +8,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.auth import require_permission
 from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
 from app.db.models import (
     Base,
-    FileUpload,
-    FileUploadStatus,
     KnowledgeBase,
     Permission,
     Role,
@@ -108,7 +105,13 @@ def _auth_headers(context, knowledge_base_id="kb-1", user_id="user-1"):
 @patch("app.api.routes.get_storage_backend")
 @patch("app.api.routes.get_parser_registry")
 @patch("app.api.routes.DocumentProcessor")
-def test_upload_file_success(mock_processor, mock_registry, mock_storage, client, app_db):
+def test_upload_file_success(
+    mock_processor,
+    mock_registry,
+    mock_storage,
+    client,
+    app_db,
+):
     """Test successful file upload."""
     _, Session, context = app_db
     user_id = create_user_with_permissions(

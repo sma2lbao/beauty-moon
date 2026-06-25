@@ -1,8 +1,7 @@
 """API routes for luna-corpus."""
 import json
-import time
-from datetime import datetime
-from typing import Annotated, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -14,11 +13,14 @@ from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.permissions import PermissionSlug
 from app.core.config import get_settings
 from app.db.database import get_db
-from app.db.models import Chunk, ContentStatus, Conversation, Document, FileUpload, Message, MessageRole
-from app.services.ingestion.exceptions import DuplicateFileError, UnsupportedFileTypeError
-from app.services.ingestion.parsers import get_parser_registry
-from app.services.ingestion.service import IngestionService
-from app.services.ingestion.storage import get_storage_backend
+from app.db.models import (
+    ContentStatus,
+    Conversation,
+    Document,
+    FileUpload,
+    Message,
+    MessageRole,
+)
 from app.graph.rag_graph import (
     answer_question,
     answer_question_multi_turn,
@@ -26,13 +28,22 @@ from app.graph.rag_graph import (
     answer_question_stream,
 )
 from app.services.document_processor import DocumentProcessor
+from app.services.ingestion.exceptions import (
+    DuplicateFileError,
+    UnsupportedFileTypeError,
+)
+from app.services.ingestion.parsers import get_parser_registry
+from app.services.ingestion.service import IngestionService
+from app.services.ingestion.storage import get_storage_backend
 from app.services.memory import (
     add_message_to_conversation,
-    create_conversation,
-    delete_conversation as memory_delete_conversation,
     clear_conversation_messages,
+    create_conversation,
     get_conversation,
     get_message_count,
+)
+from app.services.memory import (
+    delete_conversation as memory_delete_conversation,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["qa"])
@@ -156,8 +167,12 @@ class MultiTurnQuestionRequest(BaseModel):
     """Multi-turn question request with conversation context."""
 
     question: str = Field(..., min_length=1, max_length=2000)
-    conversation_id: str | None = Field(default=None, description="Existing conversation ID")
-    include_history: bool = Field(default=True, description="Include conversation history")
+    conversation_id: str | None = Field(
+        default=None, description="Existing conversation ID"
+    )
+    include_history: bool = Field(
+        default=True, description="Include conversation history"
+    )
 
 
 class MultiTurnAnswerResponse(BaseModel):
@@ -242,7 +257,9 @@ async def query(
     )
 
 
-async def stream_event_generator(question: str, knowledge_base_id: str) -> AsyncGenerator[str, None]:
+async def stream_event_generator(
+    question: str, knowledge_base_id: str
+) -> AsyncGenerator[str, None]:
     """Generate SSE events for streaming answer.
 
     Args:
@@ -288,7 +305,11 @@ async def stream_query(
 
 
 # Document Management
-@router.post("/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/documents",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_document(
     doc: DocumentCreate,
     db: Annotated[Session, Depends(get_db)],
@@ -493,7 +514,11 @@ async def process_document(
 
 
 # Conversation Management
-@router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/conversations",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_conversation_endpoint(
     conv: ConversationCreate,
     db: Annotated[Session, Depends(get_db)],
@@ -563,7 +588,7 @@ async def list_conversations(
     ).filter(Conversation.knowledge_base_id == context.knowledge_base.id)
 
     if active_only:
-        query = query.filter(Conversation.is_active == True)
+        query = query.filter(Conversation.is_active)
 
     results = query.order_by(Conversation.updated_at.desc()).limit(limit).all()
 
@@ -621,7 +646,10 @@ async def get_conversation_endpoint(
     )
 
 
-@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=list[MessageResponse],
+)
 async def get_conversation_messages_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
@@ -666,7 +694,10 @@ async def get_conversation_messages_endpoint(
     ]
 
 
-@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
@@ -689,7 +720,10 @@ async def delete_conversation_endpoint(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
 
-@router.post("/conversations/{conversation_id}/clear", response_model=ConversationResponse)
+@router.post(
+    "/conversations/{conversation_id}/clear",
+    response_model=ConversationResponse,
+)
 async def clear_conversation_endpoint(
     conversation_id: str,
     db: Annotated[Session, Depends(get_db)],
@@ -733,7 +767,11 @@ async def multi_turn_query(
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
-        Depends(require_permission(PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE)),
+        Depends(
+            require_permission(
+                PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE
+            )
+        ),
     ],
 ) -> MultiTurnAnswerResponse:
     """Answer a question with conversation context.
@@ -834,7 +872,11 @@ async def stream_multi_turn_query(
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
-        Depends(require_permission(PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE)),
+        Depends(
+            require_permission(
+                PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE
+            )
+        ),
     ],
 ):
     """Stream answer with conversation context.
@@ -886,7 +928,11 @@ async def stream_multi_turn_query(
 
 
 # File Upload Management
-@router.post("/files/upload", response_model=FileUploadCreateResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/files/upload",
+    response_model=FileUploadCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_file(
     file: UploadFile,
     db: Annotated[Session, Depends(get_db)],
