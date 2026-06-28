@@ -407,6 +407,47 @@ class Conversation(Base):
     )
 
 
+class TaskType(str, enum.Enum):
+    """Type of background ingestion task."""
+
+    DOCUMENT_INDEX = "document_index"
+
+
+class TaskStatus(str, enum.Enum):
+    """Status of a background ingestion task."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class IngestionTask(Base):
+    """Background ingestion task tracking."""
+
+    __tablename__ = "ingestion_tasks"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    type: Mapped[TaskType] = mapped_column(Enum(TaskType), nullable=False)
+    status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False
+    )
+    target_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Message(Base):
     """Message in a conversation."""
 

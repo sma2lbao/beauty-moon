@@ -293,6 +293,28 @@ def test_workspace_membership_role_relationship(db_session):
     assert role.workspace_memberships == [membership]
 
 
+def test_task_type_enum_exists():
+    from app.db.models import TaskType
+
+    assert TaskType.DOCUMENT_INDEX.value == "document_index"
+
+
+def test_task_status_enum_exists():
+    from app.db.models import TaskStatus
+
+    assert TaskStatus.PENDING.value == "pending"
+    assert TaskStatus.RUNNING.value == "running"
+    assert TaskStatus.COMPLETED.value == "completed"
+    assert TaskStatus.FAILED.value == "failed"
+    assert TaskStatus.CANCELLED.value == "cancelled"
+
+
+def test_ingestion_task_model_exists():
+    from app.db.models import IngestionTask
+
+    assert IngestionTask.__tablename__ == "ingestion_tasks"
+
+
 def test_file_upload_creation(db_session):
     """Test creating a file upload record."""
     from app.db.models import FileUpload
