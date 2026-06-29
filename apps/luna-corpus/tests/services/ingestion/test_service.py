@@ -48,42 +48,34 @@ def mock_parser_registry():
 
 
 @pytest.fixture
-def mock_processor():
-    """Create mock document processor."""
-    processor = MagicMock()
-    processor.process_document = MagicMock(return_value=[])
-    return processor
-
-
-@pytest.fixture
-def ingestion_service(mock_storage, mock_parser_registry, mock_processor):
+def ingestion_service(mock_storage, mock_parser_registry):
     """Create ingestion service with mocked dependencies."""
     return IngestionService(
         storage=mock_storage,
         parser_registry=mock_parser_registry,
-        processor=mock_processor,
         max_upload_size=52428800,
         duplicate_policy="reject",
     )
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_success(ingestion_service, mock_storage, mock_processor):
-    """Test successful file ingestion."""
+async def test_ingest_file_success(ingestion_service, mock_storage):
+    """Test successful file ingestion returns FileUpload and Document."""
     db = MagicMock()
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
     # Mock hash check - no duplicate
     db.query.return_value.filter.return_value.first.return_value = None
 
-    result = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document = await ingestion_service.ingest_file(db, file, "kb-1")
 
-    assert isinstance(result, FileUpload)
-    assert result.status == FileUploadStatus.PARSED
+    assert isinstance(upload, FileUpload)
+    assert upload.status == FileUploadStatus.UPLOADED
     mock_storage.save.assert_called_once()
-    mock_processor.process_document.assert_called_once()
     db.add.assert_called()
     db.commit.assert_called()
+    # Document was created but NOT processed
+    assert document is not None
 
 
 @pytest.mark.asyncio
@@ -124,14 +116,11 @@ async def test_ingest_file_duplicate_reject(ingestion_service):
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_duplicate_replace(
-    mock_storage, mock_parser_registry, mock_processor
-):
+async def test_ingest_file_duplicate_replace(mock_storage, mock_parser_registry):
     """Test duplicate file replace policy."""
     service = IngestionService(
         storage=mock_storage,
         parser_registry=mock_parser_registry,
-        processor=mock_processor,
         max_upload_size=52428800,
         duplicate_policy="replace",
     )
@@ -149,9 +138,9 @@ async def test_ingest_file_duplicate_replace(
 
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
-    result = await service.ingest_file(db, file, "kb-1")
+    upload, _ = await service.ingest_file(db, file, "kb-1")
 
-    assert isinstance(result, FileUpload)
+    assert isinstance(upload, FileUpload)
     mock_storage.delete.assert_called_once()
     db.delete.assert_called()
 
@@ -170,45 +159,9 @@ async def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
 
     result = await ingestion_service.ingest_file(db, file, "kb-1")
 
-    assert result.status == FileUploadStatus.ERROR
-    assert "Corrupted file" in result.error_message
-
-
-@pytest.mark.asyncio
-async def test_ingest_file_generic_exception_rollback(
-    ingestion_service, mock_parser_registry, mock_storage
-):
-    """Test generic exception triggers document rollback and storage cleanup."""
-    parser = MagicMock()
-    parser.parse = MagicMock(return_value="Parsed content")
-    mock_parser_registry.get_parser.return_value = parser
-
-    db = MagicMock()
-    doc = MagicMock()
-    db.query.return_value.filter.return_value.first.side_effect = [
-        None,  # duplicate check
-        doc,  # document rollback found
-    ]
-
-    # Simulate a failure during processor.process_document
-    ingestion_service.processor.process_document = MagicMock(
-        side_effect=RuntimeError("Processor failed")
-    )
-
-    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
-
-    result = await ingestion_service.ingest_file(db, file, "kb-1")
-
-    assert result.status == FileUploadStatus.ERROR
-    assert "Processor failed" in result.error_message
-
-    # Verify document rollback query includes knowledge_base_id filter
-    rollback_query = db.query.return_value.filter
-    assert rollback_query.call_count == 2  # once for duplicate check, once for rollback
-    # Document was deleted
-    db.delete.assert_called_once_with(doc)
-    # Storage cleanup
-    mock_storage.delete.assert_called_once()
+    assert result[0].status == FileUploadStatus.ERROR
+    assert "Corrupted file" in result[0].error_message
+    assert result[1] is None
 
 
 @pytest.mark.asyncio

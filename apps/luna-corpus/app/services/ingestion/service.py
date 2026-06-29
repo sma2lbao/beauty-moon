@@ -1,8 +1,8 @@
-"""Ingestion service orchestrating upload, storage, parse, document, vectorize."""
+"""Ingestion service orchestrating upload, storage, parse, document creation."""
+
 import contextlib
 import hashlib
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
 from app.db.vectorstore import delete_chunks_from_vectorstore
-from app.services.document_processor import DocumentProcessor
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     ParseError,
@@ -64,13 +63,12 @@ def _generate_storage_path(
 
 
 class IngestionService:
-    """Orchestrate file upload -> storage -> parse -> document -> vectorize."""
+    """Orchestrate file upload -> storage -> parse -> document creation."""
 
     def __init__(
         self,
         storage: StorageBackend,
         parser_registry: ParserRegistry,
-        processor: DocumentProcessor,
         max_upload_size: int = 52428800,
         duplicate_policy: str = "reject",
     ):
@@ -79,13 +77,11 @@ class IngestionService:
         Args:
             storage: Storage backend instance
             parser_registry: Parser registry instance
-            processor: Document processor for chunking/vectorization
             max_upload_size: Maximum allowed file size in bytes
             duplicate_policy: How to handle duplicate files: "reject" or "replace"
         """
         self.storage = storage
         self.parser_registry = parser_registry
-        self.processor = processor
         self.max_upload_size = max_upload_size
         self.duplicate_policy = duplicate_policy
 
@@ -94,21 +90,10 @@ class IngestionService:
         db: Session,
         file: UploadFile,
         knowledge_base_id: str,
-    ) -> FileUpload:
-        """Ingest a file: store, parse, create document, vectorize.
+    ) -> tuple[FileUpload, Document | None]:
+        """Ingest a file: store, parse, create document. Returns (FileUpload, Document).
 
-        Args:
-            db: Database session
-            file: Uploaded file
-            knowledge_base_id: Target knowledge base ID
-
-        Returns:
-            FileUpload record
-
-        Raises:
-            HTTPException: 413 if file too large
-            UnsupportedFileTypeError: If MIME type not supported
-            DuplicateFileError: If duplicate detected and policy is reject
+        Document processing (chunk + vectorize) is the caller's responsibility.
         """
         # Validate file size
         if file.size and file.size > self.max_upload_size:
@@ -188,16 +173,7 @@ class IngestionService:
             db.commit()
             db.refresh(document)
 
-            # Process document (chunk + vectorize)
-            self.processor.process_document(db, document.id)
-
-            # Update upload status
-            upload.status = FileUploadStatus.PARSED
-            upload.parsed_at = datetime.now()
-            db.commit()
-            db.refresh(upload)
-
-            return upload
+            return upload, document
 
         except ParseError as e:
             upload.status = FileUploadStatus.ERROR
@@ -206,7 +182,7 @@ class IngestionService:
             # Clean up stored file
             with contextlib.suppress(StorageError):
                 await self.storage.delete(stored_name)
-            return upload
+            return upload, None
 
         except Exception as e:
             upload.status = FileUploadStatus.ERROR
@@ -227,7 +203,7 @@ class IngestionService:
             # Clean up stored file
             with contextlib.suppress(StorageError):
                 await self.storage.delete(stored_name)
-            return upload
+            return upload, None
 
     async def delete_file(
         self,
