@@ -259,8 +259,7 @@ def test_multi_turn_requires_qa_and_conversation_write_permissions(client, app_d
 
     assert response.status_code == 403
     assert (
-        response.json()["detail"]
-        == "Missing required permission: conversation:write"
+        response.json()["detail"] == "Missing required permission: conversation:write"
     )
 
 

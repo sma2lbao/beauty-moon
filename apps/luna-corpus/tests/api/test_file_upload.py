@@ -1,4 +1,5 @@
 """Integration tests for file upload endpoints."""
+
 import io
 from unittest.mock import patch
 
@@ -80,9 +81,7 @@ def create_user_with_permissions(Session, workspace_id, label, permission_slugs)
             if not permission:
                 permission = Permission(name=slug, slug=slug, description=slug)
             permissions.append(permission)
-        role = Role(
-            name=label, slug=label, is_system=True, permissions=permissions
-        )
+        role = Role(name=label, slug=label, is_system=True, permissions=permissions)
         membership = WorkspaceMembership(
             user=user, workspace_id=workspace_id, roles=[role]
         )
@@ -123,8 +122,10 @@ def test_upload_file_success(
 
     # Setup mocks
     storage = mock_storage.return_value
+
     async def mock_save(f, p):
         return p
+
     storage.save = mock_save
 
     registry = mock_registry.return_value

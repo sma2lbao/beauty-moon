@@ -1,4 +1,5 @@
 """Tests for ingestion storage backend."""
+
 import io
 
 import pytest
@@ -74,6 +75,7 @@ async def test_local_storage_delete_not_found(local_backend):
 def test_get_storage_backend_returns_local(monkeypatch, tmp_path):
     """Test factory returns LocalStorageBackend by default."""
     from app.core.config import Settings
+
     settings = Settings(
         storage_backend="local",
         storage_local_path=tmp_path / "uploads",

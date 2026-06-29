@@ -90,10 +90,7 @@ def test_tenant_context_migration_defines_required_schema():
 def test_rbac_migration_exists():
     project_root = Path(__file__).parents[2]
     migration_path = (
-        project_root
-        / "alembic"
-        / "versions"
-        / "20260623_0003_rbac_enforcement.py"
+        project_root / "alembic" / "versions" / "20260623_0003_rbac_enforcement.py"
     )
 
     assert migration_path.is_file()
@@ -102,10 +99,7 @@ def test_rbac_migration_exists():
 def test_rbac_migration_defines_required_schema_and_seed_data():
     project_root = Path(__file__).parents[2]
     migration_path = (
-        project_root
-        / "alembic"
-        / "versions"
-        /   "20260623_0003_rbac_enforcement.py"
+        project_root / "alembic" / "versions" / "20260623_0003_rbac_enforcement.py"
     )
     migration_source = migration_path.read_text()
 

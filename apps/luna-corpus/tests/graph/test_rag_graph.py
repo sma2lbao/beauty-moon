@@ -131,8 +131,18 @@ def test_answer_question_uses_validated_sources_for_prompt():
     from app.graph.rag_graph import answer_question
 
     raw_results = [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1},
-        {"chunk_id": "chunk-2", "document_id": "doc-2", "content": "Blocked", "score": 0.2},
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        },
+        {
+            "chunk_id": "chunk-2",
+            "document_id": "doc-2",
+            "content": "Blocked",
+            "score": 0.2,
+        },
     ]
     validated_results = [raw_results[0]]
 
@@ -143,7 +153,9 @@ def test_answer_question_uses_validated_sources_for_prompt():
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=validated_results,
         ),
-        patch("app.graph.rag_graph.generate_response", return_value="Answer") as generate,
+        patch(
+            "app.graph.rag_graph.generate_response", return_value="Answer"
+        ) as generate,
     ):
         result = answer_question("Test question", "kb-1")
 
@@ -163,10 +175,18 @@ def test_answer_question_returns_no_results_when_validation_filters_everything()
         patch(
             "app.graph.rag_graph.search_vectorstore",
             return_value=[
-                {"chunk_id": "chunk-2", "document_id": "doc-2", "content": "Blocked", "score": 0.2}
+                {
+                    "chunk_id": "chunk-2",
+                    "document_id": "doc-2",
+                    "content": "Blocked",
+                    "score": 0.2,
+                }
             ],
         ),
-        patch("app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base", return_value=[]),
+        patch(
+            "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
+            return_value=[],
+        ),
     ):
         result = answer_question("Test question", "kb-1")
 
@@ -186,8 +206,18 @@ async def test_answer_question_stream_uses_validated_sources():
     from app.graph.rag_graph import answer_question_stream
 
     raw_results = [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1},
-        {"chunk_id": "chunk-2", "document_id": "doc-2", "content": "Blocked", "score": 0.2},
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        },
+        {
+            "chunk_id": "chunk-2",
+            "document_id": "doc-2",
+            "content": "Blocked",
+            "score": 0.2,
+        },
     ]
     validated_results = [raw_results[0]]
 
@@ -201,7 +231,9 @@ async def test_answer_question_stream_uses_validated_sources():
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=validated_results,
         ),
-        patch("app.graph.rag_graph.generate_streaming_response", fake_streaming_response),
+        patch(
+            "app.graph.rag_graph.generate_streaming_response", fake_streaming_response
+        ),
     ):
         events = await collect_stream(answer_question_stream("Test question", "kb-1"))
 
@@ -215,7 +247,12 @@ def test_answer_question_multi_turn_uses_validated_sources():
     from app.graph.rag_graph import answer_question_multi_turn
 
     raw_results = [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1}
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        }
     ]
 
     with (
@@ -239,7 +276,12 @@ async def test_answer_question_multi_turn_stream_uses_validated_sources():
     from app.graph.rag_graph import answer_question_multi_turn_stream
 
     raw_results = [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1}
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        }
     ]
 
     async def fake_streaming_response(prompt, context):
@@ -252,9 +294,13 @@ async def test_answer_question_multi_turn_stream_uses_validated_sources():
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=raw_results,
         ),
-        patch("app.graph.rag_graph.generate_streaming_response", fake_streaming_response),
+        patch(
+            "app.graph.rag_graph.generate_streaming_response", fake_streaming_response
+        ),
     ):
-        events = await collect_stream(answer_question_multi_turn_stream("Test question", "kb-1"))
+        events = await collect_stream(
+            answer_question_multi_turn_stream("Test question", "kb-1")
+        )
 
     done = [event for event in events if event["event"] == "done"][0]
     assert done["data"]["sources"] == [

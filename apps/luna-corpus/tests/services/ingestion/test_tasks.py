@@ -1,4 +1,5 @@
 """Tests for TaskService."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -25,9 +26,7 @@ def test_create_task(task_service):
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None
 
-    task = task_service.create_task(
-        db, TaskType.DOCUMENT_INDEX, "doc-1", "kb-1"
-    )
+    task = task_service.create_task(db, TaskType.DOCUMENT_INDEX, "doc-1", "kb-1")
 
     assert task.type == TaskType.DOCUMENT_INDEX
     assert task.status == TaskStatus.PENDING
@@ -43,9 +42,7 @@ def test_create_task_deduplication(task_service):
     existing.status = TaskStatus.PENDING
     _mock_query_chain(db, "filter", "order_by", "first", return_value=existing)
 
-    task = task_service.create_task(
-        db, TaskType.DOCUMENT_INDEX, "doc-1", "kb-1"
-    )
+    task = task_service.create_task(db, TaskType.DOCUMENT_INDEX, "doc-1", "kb-1")
 
     assert task is existing
     db.add.assert_not_called()
@@ -123,3 +120,45 @@ def test_mark_failed(task_service):
     assert result.error_message == "Something broke"
     assert result.completed_at is not None
     db.commit.assert_called()
+
+
+def test_create_task_deduplication_running(task_service):
+    db = MagicMock()
+    existing = MagicMock()
+    existing.status = TaskStatus.RUNNING
+    _mock_query_chain(db, "filter", "order_by", "first", return_value=existing)
+
+    task = task_service.create_task(db, TaskType.DOCUMENT_INDEX, "doc-1", "kb-1")
+
+    assert task is existing
+    db.add.assert_not_called()
+
+
+def test_mark_running_task_not_found(task_service):
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    result = task_service.mark_running(db, "missing")
+
+    assert result is None
+    db.commit.assert_not_called()
+
+
+def test_mark_completed_task_not_found(task_service):
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    result = task_service.mark_completed(db, "missing")
+
+    assert result is None
+    db.commit.assert_not_called()
+
+
+def test_mark_failed_task_not_found(task_service):
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    result = task_service.mark_failed(db, "missing", "error")
+
+    assert result is None
+    db.commit.assert_not_called()

@@ -1,4 +1,5 @@
 """Tests for ingestion service."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -143,7 +144,7 @@ async def test_ingest_file_duplicate_replace(
     db.query.return_value.filter.return_value.first.side_effect = [
         existing,  # duplicate check in ingest_file
         existing,  # lookup in delete_file
-        None,      # no duplicate after delete
+        None,  # no duplicate after delete
     ]
 
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
@@ -186,7 +187,7 @@ async def test_ingest_file_generic_exception_rollback(
     doc = MagicMock()
     db.query.return_value.filter.return_value.first.side_effect = [
         None,  # duplicate check
-        doc,   # document rollback found
+        doc,  # document rollback found
     ]
 
     # Simulate a failure during processor.process_document

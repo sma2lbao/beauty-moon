@@ -73,8 +73,18 @@ def test_validate_retrieved_docs_filters_documents_outside_knowledge_base():
             db.close()
 
     docs = [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1},
-        {"chunk_id": "chunk-2", "document_id": "doc-2", "content": "Blocked", "score": 0.2},
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        },
+        {
+            "chunk_id": "chunk-2",
+            "document_id": "doc-2",
+            "content": "Blocked",
+            "score": 0.2,
+        },
         {"chunk_id": "chunk-3", "document_id": None, "content": "No doc", "score": 0.3},
     ]
 
@@ -82,7 +92,12 @@ def test_validate_retrieved_docs_filters_documents_outside_knowledge_base():
         filtered = rag_graph.validate_retrieved_docs_for_knowledge_base(docs, "kb-1")
 
     assert filtered == [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1}
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        }
     ]
     engine.dispose()
 
@@ -93,20 +108,42 @@ def test_retrieve_node_validates_sources_before_returning_docs():
         patch(
             "app.graph.rag_graph.search_vectorstore",
             return_value=[
-                {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1},
-                {"chunk_id": "chunk-2", "document_id": "doc-2", "content": "Blocked", "score": 0.2},
+                {
+                    "chunk_id": "chunk-1",
+                    "document_id": "doc-1",
+                    "content": "Allowed",
+                    "score": 0.1,
+                },
+                {
+                    "chunk_id": "chunk-2",
+                    "document_id": "doc-2",
+                    "content": "Blocked",
+                    "score": 0.2,
+                },
             ],
         ),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=[
-                {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1}
+                {
+                    "chunk_id": "chunk-1",
+                    "document_id": "doc-1",
+                    "content": "Allowed",
+                    "score": 0.1,
+                }
             ],
         ) as validate,
     ):
-        result = rag_graph.retrieve_node({"question": "What?", "knowledge_base_id": "kb-1"})
+        result = rag_graph.retrieve_node(
+            {"question": "What?", "knowledge_base_id": "kb-1"}
+        )
 
     validate.assert_called_once()
     assert result["retrieved_docs"] == [
-        {"chunk_id": "chunk-1", "document_id": "doc-1", "content": "Allowed", "score": 0.1}
+        {
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "content": "Allowed",
+            "score": 0.1,
+        }
     ]

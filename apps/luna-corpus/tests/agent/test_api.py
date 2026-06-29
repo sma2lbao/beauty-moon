@@ -93,7 +93,9 @@ def create_user_with_permissions(Session, workspace_id, label, permission_slugs)
         user = User(email=f"{label}@example.com", display_name=label)
         permissions = []
         for slug in permission_slugs:
-            permission = session.query(Permission).filter(Permission.slug == slug).first()
+            permission = (
+                session.query(Permission).filter(Permission.slug == slug).first()
+            )
             if not permission:
                 permission = Permission(name=slug, slug=slug, description=slug)
             permissions.append(permission)
@@ -141,7 +143,9 @@ def test_list_tools_requires_knowledge_base_read_permission(client, app_db):
     response = client.get("/api/v1/agent/tools", headers=headers(context, user_id))
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Missing required permission: knowledge_base:read"
+    assert (
+        response.json()["detail"] == "Missing required permission: knowledge_base:read"
+    )
 
 
 def test_register_tool_requires_knowledge_base_manage_permission(client, app_db):
@@ -168,7 +172,10 @@ def test_register_tool_requires_knowledge_base_manage_permission(client, app_db)
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Missing required permission: knowledge_base:manage"
+    assert (
+        response.json()["detail"]
+        == "Missing required permission: knowledge_base:manage"
+    )
 
 
 def test_query_requires_qa_query_permission(client, app_db):
@@ -328,7 +335,9 @@ def test_query_empty_tools_uses_scoped_default_registry(client, app_db):
         assert rag_tool is not None
         with (
             patch("app.agent.tools.rag_search.embed_text", return_value=[0.1]),
-            patch("app.agent.tools.rag_search.search_vectorstore", return_value=[]) as search,
+            patch(
+                "app.agent.tools.rag_search.search_vectorstore", return_value=[]
+            ) as search,
         ):
             rag_tool.executor(query="What?")
         search.assert_called_once_with(
@@ -378,6 +387,7 @@ def test_stream_empty_list_sends_empty_registry(client, app_db):
     )
 
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
+
         async def stream_events(_query):
             yield {"event": "done", "data": {"answer": "ok"}}
 

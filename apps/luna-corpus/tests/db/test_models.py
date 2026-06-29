@@ -205,10 +205,12 @@ def test_conversation_belongs_to_knowledge_base(db_session):
 
 
 def test_user_email_is_unique(db_session):
-    db_session.add_all([
-        User(email="owner@example.com", display_name="Owner"),
-        User(email="owner@example.com", display_name="Duplicate"),
-    ])
+    db_session.add_all(
+        [
+            User(email="owner@example.com", display_name="Owner"),
+            User(email="owner@example.com", display_name="Duplicate"),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -220,10 +222,12 @@ def test_workspace_membership_is_unique_per_user_and_workspace(db_session):
     db_session.add(user)
     db_session.commit()
 
-    db_session.add_all([
-        WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
-        WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
-    ])
+    db_session.add_all(
+        [
+            WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
+            WorkspaceMembership(user_id=user.id, workspace_id=workspace.id),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -245,20 +249,24 @@ def test_workspace_membership_relationships(db_session):
 
 
 def test_role_slug_is_unique(db_session):
-    db_session.add_all([
-        Role(name="Reader", slug="kb_reader", is_system=True),
-        Role(name="Duplicate Reader", slug="kb_reader", is_system=True),
-    ])
+    db_session.add_all(
+        [
+            Role(name="Reader", slug="kb_reader", is_system=True),
+            Role(name="Duplicate Reader", slug="kb_reader", is_system=True),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()
 
 
 def test_permission_slug_is_unique(db_session):
-    db_session.add_all([
-        Permission(name="Document Read", slug="document:read"),
-        Permission(name="Duplicate Document Read", slug="document:read"),
-    ])
+    db_session.add_all(
+        [
+            Permission(name="Document Read", slug="document:read"),
+            Permission(name="Duplicate Document Read", slug="document:read"),
+        ]
+    )
 
     with pytest.raises(IntegrityError):
         db_session.commit()

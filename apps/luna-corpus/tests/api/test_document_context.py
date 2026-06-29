@@ -80,9 +80,7 @@ def create_user_with_permissions(Session, workspace_id, label, permission_slugs)
             if not permission:
                 permission = Permission(name=slug, slug=slug, description=slug)
             permissions.append(permission)
-        role = Role(
-            name=label, slug=label, is_system=True, permissions=permissions
-        )
+        role = Role(name=label, slug=label, is_system=True, permissions=permissions)
         membership = WorkspaceMembership(
             user=user, workspace_id=workspace_id, roles=[role]
         )

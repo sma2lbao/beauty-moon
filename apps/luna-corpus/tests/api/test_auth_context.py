@@ -43,8 +43,7 @@ def create_auth_records(
         is_active=user_active,
     )
     permissions = [
-        Permission(name=slug, slug=slug, description=slug)
-        for slug in permission_slugs
+        Permission(name=slug, slug=slug, description=slug) for slug in permission_slugs
     ]
     role = Role(name="Role", slug="test_role", is_system=True, permissions=permissions)
     membership = WorkspaceMembership(

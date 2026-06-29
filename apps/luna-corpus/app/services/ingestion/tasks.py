@@ -1,4 +1,5 @@
 """Task service for managing background ingestion tasks."""
+
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -66,7 +67,7 @@ class TaskService:
             query = query.filter(IngestionTask.status == status)
         return query.order_by(IngestionTask.created_at.desc()).limit(limit).all()
 
-    def mark_running(self, db: Session, task_id: str) -> IngestionTask:
+    def mark_running(self, db: Session, task_id: str) -> IngestionTask | None:
         """Mark task as running and set started_at."""
         task = self.get_task(db, task_id)
         if task:
@@ -76,7 +77,7 @@ class TaskService:
             db.refresh(task)
         return task
 
-    def mark_completed(self, db: Session, task_id: str) -> IngestionTask:
+    def mark_completed(self, db: Session, task_id: str) -> IngestionTask | None:
         """Mark task as completed and set completed_at."""
         task = self.get_task(db, task_id)
         if task:
@@ -88,7 +89,7 @@ class TaskService:
 
     def mark_failed(
         self, db: Session, task_id: str, error_message: str
-    ) -> IngestionTask:
+    ) -> IngestionTask | None:
         """Mark task as failed, record error, and set completed_at."""
         task = self.get_task(db, task_id)
         if task:
