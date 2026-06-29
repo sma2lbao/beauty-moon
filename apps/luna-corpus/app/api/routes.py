@@ -1,9 +1,18 @@
 """API routes for luna-corpus."""
+
 import json
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
@@ -12,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.permissions import PermissionSlug
 from app.core.config import get_settings
-from app.db.database import get_db
+from app.db.database import SessionLocal, get_db
 from app.db.models import (
     ContentStatus,
     Conversation,
@@ -20,6 +29,8 @@ from app.db.models import (
     FileUpload,
     Message,
     MessageRole,
+    TaskStatus,
+    TaskType,
 )
 from app.graph.rag_graph import (
     answer_question,
@@ -27,7 +38,6 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
-from app.services.document_processor import DocumentProcessor
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     UnsupportedFileTypeError,
@@ -35,6 +45,7 @@ from app.services.ingestion.exceptions import (
 from app.services.ingestion.parsers import get_parser_registry
 from app.services.ingestion.service import IngestionService
 from app.services.ingestion.storage import get_storage_backend
+from app.services.ingestion.tasks import TaskService
 from app.services.memory import (
     add_message_to_conversation,
     clear_conversation_messages,
@@ -121,6 +132,29 @@ class ProcessResponse(BaseModel):
 
     status: str
     chunks_created: int
+
+
+class TaskResponse(BaseModel):
+    """Task response model."""
+
+    id: str
+    type: str
+    status: str
+    target_id: str
+    error_message: str | None
+    started_at: str | None
+    completed_at: str | None
+    created_at: str
+    updated_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaskListResponse(BaseModel):
+    """Task list response."""
+
+    tasks: list[TaskResponse]
+    total: int
 
 
 # Conversation Models
@@ -210,10 +244,35 @@ class FileUploadListResponse(BaseModel):
 
 
 class FileUploadCreateResponse(BaseModel):
-    """File upload creation response with document info."""
+    """File upload creation response with document and task info."""
 
     file: FileUploadResponse
     document_id: str | None
+    task_id: str | None
+
+
+def _run_index_task(task_id: str, document_id: str) -> None:
+    """Background task: chunk, embed, and vectorize a document.
+
+    Runs in its own DB session. Catches all exceptions and updates
+    task status accordingly.
+    """
+    from app.services.document_processor import DocumentProcessor
+
+    db = SessionLocal()
+    try:
+        task_service = TaskService()
+        task_service.mark_running(db, task_id)
+
+        processor = DocumentProcessor()
+        processor.process_document(db, document_id)
+
+        task_service.mark_completed(db, task_id)
+    except Exception as e:
+        task_service = TaskService()
+        task_service.mark_failed(db, task_id, error_message=str(e))
+    finally:
+        db.close()
 
 
 # Question Answering
@@ -474,24 +533,26 @@ async def delete_document(
     db.commit()
 
 
-@router.post("/documents/{document_id}/process", response_model=ProcessResponse)
+@router.post("/documents/{document_id}/process")
 async def process_document(
     document_id: str,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
     ],
-) -> ProcessResponse:
-    """Process a document: chunk and vectorize.
+) -> dict[str, str]:
+    """Queue a document for processing (chunk + vectorize).
 
     Args:
         document_id: Document ID
+        background_tasks: FastAPI background tasks
         db: Database session
         context: Request context with knowledge base scope
 
     Returns:
-        Processing result
+        Task ID and status
     """
     doc = (
         db.query(Document)
@@ -504,13 +565,13 @@ async def process_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    processor = DocumentProcessor()
-    chunks = processor.process_document(db, document_id)
-
-    return ProcessResponse(
-        status="completed",
-        chunks_created=len(chunks),
+    task_service = TaskService()
+    task = task_service.create_task(
+        db, TaskType.DOCUMENT_INDEX, doc.id, context.knowledge_base.id
     )
+    background_tasks.add_task(_run_index_task, task.id, doc.id)
+
+    return {"task_id": task.id, "status": task.status.value}
 
 
 # Conversation Management
@@ -582,10 +643,14 @@ async def list_conversations(
     )
 
     # Main query with LEFT JOIN to message counts, scoped to knowledge base
-    query = db.query(Conversation, message_count_subq.c.message_count).outerjoin(
-        message_count_subq,
-        Conversation.id == message_count_subq.c.conversation_id,
-    ).filter(Conversation.knowledge_base_id == context.knowledge_base.id)
+    query = (
+        db.query(Conversation, message_count_subq.c.message_count)
+        .outerjoin(
+            message_count_subq,
+            Conversation.id == message_count_subq.c.conversation_id,
+        )
+        .filter(Conversation.knowledge_base_id == context.knowledge_base.id)
+    )
 
     if active_only:
         query = query.filter(Conversation.is_active)
@@ -594,15 +659,17 @@ async def list_conversations(
 
     conversations_response = []
     for conv, message_count in results:
-        conversations_response.append(ConversationResponse(
-            id=conv.id,
-            title=conv.title,
-            is_active=conv.is_active,
-            summary=conv.summary,
-            created_at=conv.created_at.isoformat(),
-            updated_at=conv.updated_at.isoformat(),
-            message_count=message_count or 0,
-        ))
+        conversations_response.append(
+            ConversationResponse(
+                id=conv.id,
+                title=conv.title,
+                is_active=conv.is_active,
+                summary=conv.summary,
+                created_at=conv.created_at.isoformat(),
+                updated_at=conv.updated_at.isoformat(),
+                message_count=message_count or 0,
+            )
+        )
 
     return ConversationListResponse(
         conversations=conversations_response,
@@ -935,36 +1002,38 @@ async def stream_multi_turn_query(
 )
 async def upload_file(
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
     ],
 ) -> FileUploadCreateResponse:
-    """Upload a file, parse it, and create a document.
+    """Upload a file, parse it, create a document, and queue for indexing.
 
     Args:
         file: Uploaded file
+        background_tasks: FastAPI background tasks
         db: Database session
         context: Request context with knowledge base scope
 
     Returns:
-        Created file upload and document info
+        Created file upload, document info, and task info
     """
     storage = get_storage_backend()
     registry = get_parser_registry()
-    processor = DocumentProcessor()
 
     service = IngestionService(
         storage=storage,
         parser_registry=registry,
-        processor=processor,
         max_upload_size=get_settings().max_upload_size,
         duplicate_policy=get_settings().upload_duplicate_policy,
     )
 
     try:
-        upload = await service.ingest_file(db, file, context.knowledge_base.id)
+        upload, document = await service.ingest_file(
+            db, file, context.knowledge_base.id
+        )
     except UnsupportedFileTypeError as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -985,8 +1054,16 @@ async def upload_file(
         ) from e
 
     document_id = None
-    if upload.document:
-        document_id = upload.document.id
+    task_id = None
+
+    if document is not None:
+        document_id = document.id
+        task_service = TaskService()
+        task = task_service.create_task(
+            db, TaskType.DOCUMENT_INDEX, document.id, context.knowledge_base.id
+        )
+        task_id = task.id
+        background_tasks.add_task(_run_index_task, task.id, document.id)
 
     return FileUploadCreateResponse(
         file=FileUploadResponse(
@@ -1003,6 +1080,7 @@ async def upload_file(
             updated_at=upload.updated_at.isoformat(),
         ),
         document_id=document_id,
+        task_id=task_id,
     )
 
 
@@ -1113,16 +1191,98 @@ async def delete_file(
         context: Request context with knowledge base scope
     """
     storage = get_storage_backend()
-    processor = DocumentProcessor()
     registry = get_parser_registry()
 
     service = IngestionService(
         storage=storage,
         parser_registry=registry,
-        processor=processor,
     )
 
     await service.delete_file(db, file_id, context.knowledge_base.id)
+
+
+# Task Management
+@router.get("/tasks", response_model=TaskListResponse)
+async def list_tasks(
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
+    status_filter: TaskStatus | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> TaskListResponse:
+    """List ingestion tasks for the knowledge base.
+
+    Args:
+        db: Database session
+        context: Request context with knowledge base scope
+        status_filter: Optional status filter
+        limit: Maximum tasks to return
+
+    Returns:
+        List of tasks
+    """
+    task_service = TaskService()
+    tasks = task_service.list_tasks(
+        db, context.knowledge_base.id, status=status_filter, limit=limit
+    )
+
+    return TaskListResponse(
+        tasks=[
+            TaskResponse(
+                id=t.id,
+                type=t.type.value,
+                status=t.status.value,
+                target_id=t.target_id,
+                error_message=t.error_message,
+                started_at=t.started_at.isoformat() if t.started_at else None,
+                completed_at=t.completed_at.isoformat() if t.completed_at else None,
+                created_at=t.created_at.isoformat(),
+                updated_at=t.updated_at.isoformat(),
+            )
+            for t in tasks
+        ],
+        total=len(tasks),
+    )
+
+
+@router.get("/tasks/{task_id}", response_model=TaskResponse)
+async def get_task(
+    task_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_READ)),
+    ],
+) -> TaskResponse:
+    """Get a task by ID.
+
+    Args:
+        task_id: Task ID
+        db: Database session
+        context: Request context with knowledge base scope
+
+    Returns:
+        Task
+    """
+    task_service = TaskService()
+    task = task_service.get_task(db, task_id)
+
+    if not task or task.knowledge_base_id != context.knowledge_base.id:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return TaskResponse(
+        id=task.id,
+        type=task.type.value,
+        status=task.status.value,
+        target_id=task.target_id,
+        error_message=task.error_message,
+        started_at=task.started_at.isoformat() if task.started_at else None,
+        completed_at=task.completed_at.isoformat() if task.completed_at else None,
+        created_at=task.created_at.isoformat(),
+        updated_at=task.updated_at.isoformat(),
+    )
 
 
 # Health Check

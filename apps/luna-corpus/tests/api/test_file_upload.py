@@ -101,17 +101,19 @@ def _auth_headers(context, knowledge_base_id="kb-1", user_id="user-1"):
     }
 
 
+@patch("app.services.document_processor.DocumentProcessor")
+@patch("app.api.routes.SessionLocal")
 @patch("app.api.routes.get_storage_backend")
 @patch("app.api.routes.get_parser_registry")
-@patch("app.api.routes.DocumentProcessor")
 def test_upload_file_success(
-    mock_processor,
     mock_registry,
     mock_storage,
+    mock_session_local,
+    mock_processor,
     client,
     app_db,
 ):
-    """Test successful file upload."""
+    """Test successful file upload returns task_id."""
     _, Session, context = app_db
     user_id = create_user_with_permissions(
         Session,
@@ -133,7 +135,8 @@ def test_upload_file_success(
     parser = type("Parser", (), {"parse": lambda self, c, n: "Parsed text"})()
     registry.get_parser.return_value = parser
 
-    mock_processor.return_value.process_document.return_value = []
+    # Make background task inert: mock SessionLocal and DocumentProcessor
+    mock_processor.return_value.process_document.return_value = None
 
     response = client.post(
         "/api/v1/files/upload",
@@ -145,6 +148,8 @@ def test_upload_file_success(
     data = response.json()
     assert data["file"]["original_name"] == "test.txt"
     assert data["file"]["mime_type"] == "text/plain"
+    assert "task_id" in data
+    assert data["document_id"] is not None
 
 
 @patch("app.api.routes.get_storage_backend")
