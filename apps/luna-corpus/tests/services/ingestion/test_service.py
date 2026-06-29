@@ -199,3 +199,21 @@ async def test_delete_file_not_found(ingestion_service):
     with pytest.raises(HTTPException) as exc:
         await ingestion_service.delete_file(db, "missing", "kb-1")
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_generic_exception_rollback(ingestion_service, mock_storage):
+    """A non-ParseError failure marks upload ERROR, cleans storage, returns None doc."""
+    mock_storage.save = AsyncMock(side_effect=RuntimeError("disk exploded"))
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+
+    upload, document = await ingestion_service.ingest_file(db, file, "kb-1")
+
+    assert upload.status == FileUploadStatus.ERROR
+    assert "disk exploded" in upload.error_message
+    assert document is None
+    mock_storage.delete.assert_called_once()
