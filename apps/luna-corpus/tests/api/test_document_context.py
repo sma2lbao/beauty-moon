@@ -1,5 +1,7 @@
 """Tests for knowledge-base scoped document APIs."""
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -195,8 +197,16 @@ def test_document_reader_cannot_create_or_delete_documents(client, app_db):
     )
 
 
-def test_document_write_permission_allows_processing(client, app_db):
+@patch("app.services.document_processor.DocumentProcessor")
+@patch("app.api.routes.SessionLocal")
+def test_document_write_permission_allows_processing(
+    mock_session_local, mock_processor, client, app_db
+):
     _, Session, context = app_db
+    # Make the background indexing task inert: it opens a real SessionLocal and
+    # runs DocumentProcessor, neither of which is wired to the SQLite test DB.
+    mock_processor.return_value.process_document.return_value = None
+
     editor_id = create_user_with_permissions(
         Session,
         context["workspace_id"],
