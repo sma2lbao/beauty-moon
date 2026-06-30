@@ -270,9 +270,25 @@ def _run_index_task(task_id: str, document_id: str) -> None:
         processor.process_document(db, document_id)
 
         task_service.mark_completed(db, task_id)
+        AuditService().record(
+            db,
+            action=AuditAction.DOCUMENT_INDEX,
+            resource_type="document",
+            resource_id=document_id,
+            result=AuditResult.SUCCESS,
+            context=None,
+        )
+        db.commit()
     except Exception as e:
         task_service = TaskService()
         task_service.mark_failed(db, task_id, error_message=str(e))
+        AuditService().record_failure(
+            action=AuditAction.DOCUMENT_INDEX,
+            resource_type="document",
+            resource_id=document_id,
+            context=None,
+            detail=str(e),
+        )
     finally:
         db.close()
 
@@ -281,6 +297,7 @@ def _run_index_task(task_id: str, document_id: str) -> None:
 @router.post("/qa/query", response_model=AnswerResponse)
 async def query(
     question_req: QuestionRequest,
+    db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.QA_QUERY)),
@@ -290,6 +307,7 @@ async def query(
 
     Args:
         question_req: Question request
+        db: Database session
         context: Request context with knowledge base scope
 
     Returns:
@@ -310,6 +328,16 @@ async def query(
                 relevance_score=source["relevance_score"],
             )
         )
+
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
 
     return AnswerResponse(
         answer=result["answer"],
