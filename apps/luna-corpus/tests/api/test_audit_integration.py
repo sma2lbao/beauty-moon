@@ -2,11 +2,9 @@
 from unittest.mock import patch
 
 from app.auth.permissions import PermissionSlug
-from app.db.models import AuditLog, AuditResult, Document
-from tests.api.test_file_upload import (
+from app.db.models import AuditLog, AuditResult
+from tests.api.test_file_upload import (  # noqa: F401
     _auth_headers,
-    app_db,
-    client,
     create_user_with_permissions,
 )
 
@@ -37,7 +35,9 @@ def test_create_document_writes_audit(client, app_db):
 
 
 @patch("app.security.audit.SessionLocal")
-def test_delete_missing_document_writes_failure_audit(mock_session_local, client, app_db):
+def test_delete_missing_document_writes_failure_audit(
+    mock_session_local, client, app_db
+):
     _, Session, context = app_db
     mock_session_local.return_value = Session()
     user_id = create_user_with_permissions(

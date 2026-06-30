@@ -3,10 +3,8 @@ from unittest.mock import patch
 
 from app.auth.permissions import PermissionSlug
 from app.db.models import AuditLog, AuditResult
-from tests.api.test_file_upload import (
+from tests.api.test_file_upload import (  # noqa: F401
     _auth_headers,
-    app_db,
-    client,
     create_user_with_permissions,
 )
 
@@ -41,8 +39,8 @@ def test_index_task_writes_success_audit(app_db, monkeypatch):
     engine, Session, context = app_db
     monkeypatch.setattr("app.api.routes.SessionLocal", Session)
 
-    from app.db.models import Document
     from app.api.routes import _run_index_task
+    from app.db.models import Document
 
     session = Session()
     doc = Document(title="d", content="c", knowledge_base_id=context["kb_one_id"])

@@ -29,7 +29,9 @@ async def test_empty_file_rejected():
         storage=object(), parser_registry=_Registry(), max_upload_size=1000
     )
     with pytest.raises(EmptyFileError):
-        await service.ingest_file(db=None, file=_upload(b"", size=0), knowledge_base_id="kb")
+        await service.ingest_file(
+            db=None, file=_upload(b"", size=0), knowledge_base_id="kb"
+        )
 
 
 @pytest.mark.asyncio
