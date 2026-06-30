@@ -70,7 +70,7 @@ async def test_ingest_file_success(ingestion_service, mock_storage):
     upload, document = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert isinstance(upload, FileUpload)
-    assert upload.status == FileUploadStatus.UPLOADED
+    assert upload.status == FileUploadStatus.PARSED
     mock_storage.save.assert_called_once()
     db.add.assert_called()
     db.commit.assert_called()

@@ -3,6 +3,7 @@
 import contextlib
 import hashlib
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -172,6 +173,14 @@ class IngestionService:
             db.add(document)
             db.commit()
             db.refresh(document)
+
+            # Parsing succeeded: mark the file as parsed. Vectorization is the
+            # caller's responsibility (handled asynchronously) and is tracked
+            # separately on Document.status / IngestionTask.status.
+            upload.status = FileUploadStatus.PARSED
+            upload.parsed_at = datetime.now()
+            db.commit()
+            db.refresh(upload)
 
             return upload, document
 
