@@ -60,6 +60,13 @@ class MessageRole(str, enum.Enum):
     SYSTEM = "system"
 
 
+class AuditResult(str, enum.Enum):
+    """Outcome of an audited action."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
 role_permissions = Table(
     "role_permissions",
     Base.metadata,
@@ -470,3 +477,27 @@ class Message(Base):
     conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="messages"
     )
+
+
+class AuditLog(Base):
+    """Durable, queryable audit trail for security-relevant actions."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    actor_user_id: Mapped[str | None] = mapped_column(
+        CHAR(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    knowledge_base_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    result: Mapped[AuditResult] = mapped_column(Enum(AuditResult), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
