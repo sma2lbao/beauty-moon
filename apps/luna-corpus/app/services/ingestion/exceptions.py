@@ -29,3 +29,9 @@ class DuplicateFileError(IngestionError):
     """Raised when a duplicate file is detected and policy is reject."""
 
     pass
+
+
+class EmptyFileError(IngestionError):
+    """Raised when an uploaded file has zero bytes."""
+
+    pass

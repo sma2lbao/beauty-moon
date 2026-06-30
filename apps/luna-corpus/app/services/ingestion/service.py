@@ -13,6 +13,7 @@ from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
 from app.db.vectorstore import delete_chunks_from_vectorstore
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
+    EmptyFileError,
     ParseError,
     StorageError,
     UnsupportedFileTypeError,
@@ -115,6 +116,17 @@ class IngestionService:
         content = file.file.read()
         content_hash = _compute_hash(content)
         file.file.seek(0)
+
+        # Reject empty files
+        if len(content) == 0:
+            raise EmptyFileError("Uploaded file is empty")
+
+        # Enforce actual-byte size (defends against missing/spoofed Content-Length)
+        if len(content) > self.max_upload_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"File too large. Maximum size: {self.max_upload_size} bytes",
+            )
 
         # Check for duplicates
         existing = (

@@ -42,6 +42,7 @@ from app.graph.rag_graph import (
 from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
+    EmptyFileError,
     UnsupportedFileTypeError,
 )
 from app.services.ingestion.parsers import get_parser_registry
@@ -1088,6 +1089,11 @@ async def upload_file(
         upload, document = await service.ingest_file(
             db, file, context.knowledge_base.id
         )
+    except EmptyFileError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        ) from e
     except UnsupportedFileTypeError as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
