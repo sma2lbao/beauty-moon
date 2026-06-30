@@ -23,6 +23,7 @@ from app.auth.permissions import PermissionSlug
 from app.core.config import get_settings
 from app.db.database import SessionLocal, get_db
 from app.db.models import (
+    AuditResult,
     ContentStatus,
     Conversation,
     Document,
@@ -38,6 +39,7 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
+from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     UnsupportedFileTypeError,
@@ -396,6 +398,15 @@ async def create_document(
         knowledge_base_id=context.knowledge_base.id,
     )
     db.add(db_doc)
+    db.flush()
+    AuditService().record(
+        db,
+        action=AuditAction.DOCUMENT_CREATE,
+        resource_type="document",
+        resource_id=db_doc.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
     db.refresh(db_doc)
 
@@ -527,9 +538,24 @@ async def delete_document(
         .first()
     )
     if not doc:
+        AuditService().record_failure(
+            action=AuditAction.DOCUMENT_DELETE,
+            resource_type="document",
+            resource_id=document_id,
+            context=context,
+            detail="not found",
+        )
         raise HTTPException(status_code=404, detail="Document not found")
 
     db.delete(doc)
+    AuditService().record(
+        db,
+        action=AuditAction.DOCUMENT_DELETE,
+        resource_type="document",
+        resource_id=document_id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
 
 
