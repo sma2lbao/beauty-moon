@@ -9,6 +9,11 @@ from app.api.routes import router
 from app.api.tenant_routes import router as tenant_router
 from app.core.config import get_settings
 from app.db.database import init_db
+from app.security.middleware import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 
 settings = get_settings()
 
@@ -37,6 +42,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
+    app.add_middleware(RequestContextMiddleware)
 
     app.include_router(router)
     app.include_router(agent_router)

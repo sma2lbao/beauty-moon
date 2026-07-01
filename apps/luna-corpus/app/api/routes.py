@@ -23,6 +23,7 @@ from app.auth.permissions import PermissionSlug
 from app.core.config import get_settings
 from app.db.database import SessionLocal, get_db
 from app.db.models import (
+    AuditResult,
     ContentStatus,
     Conversation,
     Document,
@@ -38,8 +39,10 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
+from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
+    EmptyFileError,
     UnsupportedFileTypeError,
 )
 from app.services.ingestion.parsers import get_parser_registry
@@ -268,9 +271,25 @@ def _run_index_task(task_id: str, document_id: str) -> None:
         processor.process_document(db, document_id)
 
         task_service.mark_completed(db, task_id)
+        AuditService().record(
+            db,
+            action=AuditAction.DOCUMENT_INDEX,
+            resource_type="document",
+            resource_id=document_id,
+            result=AuditResult.SUCCESS,
+            context=None,
+        )
+        db.commit()
     except Exception as e:
         task_service = TaskService()
         task_service.mark_failed(db, task_id, error_message=str(e))
+        AuditService().record_failure(
+            action=AuditAction.DOCUMENT_INDEX,
+            resource_type="document",
+            resource_id=document_id,
+            context=None,
+            detail=str(e),
+        )
     finally:
         db.close()
 
@@ -279,6 +298,7 @@ def _run_index_task(task_id: str, document_id: str) -> None:
 @router.post("/qa/query", response_model=AnswerResponse)
 async def query(
     question_req: QuestionRequest,
+    db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.QA_QUERY)),
@@ -288,6 +308,7 @@ async def query(
 
     Args:
         question_req: Question request
+        db: Database session
         context: Request context with knowledge base scope
 
     Returns:
@@ -308,6 +329,16 @@ async def query(
                 relevance_score=source["relevance_score"],
             )
         )
+
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
 
     return AnswerResponse(
         answer=result["answer"],
@@ -338,6 +369,7 @@ async def stream_event_generator(
 @router.post("/qa/stream")
 async def stream_query(
     question_req: QuestionRequest,
+    db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.QA_QUERY)),
@@ -347,11 +379,22 @@ async def stream_query(
 
     Args:
         question_req: Question request
+        db: Database session
         context: Request context with knowledge base scope
 
     Returns:
         StreamingResponse with SSE events
     """
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+
     return StreamingResponse(
         stream_event_generator(question_req.question, context.knowledge_base.id),
         media_type="text/event-stream",
@@ -396,6 +439,15 @@ async def create_document(
         knowledge_base_id=context.knowledge_base.id,
     )
     db.add(db_doc)
+    db.flush()
+    AuditService().record(
+        db,
+        action=AuditAction.DOCUMENT_CREATE,
+        resource_type="document",
+        resource_id=db_doc.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
     db.refresh(db_doc)
 
@@ -527,9 +579,24 @@ async def delete_document(
         .first()
     )
     if not doc:
+        AuditService().record_failure(
+            action=AuditAction.DOCUMENT_DELETE,
+            resource_type="document",
+            resource_id=document_id,
+            context=context,
+            detail="not found",
+        )
         raise HTTPException(status_code=404, detail="Document not found")
 
     db.delete(doc)
+    AuditService().record(
+        db,
+        action=AuditAction.DOCUMENT_DELETE,
+        resource_type="document",
+        resource_id=document_id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
 
 
@@ -896,6 +963,16 @@ async def multi_turn_query(
             )
         )
 
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+
     return MultiTurnAnswerResponse(
         answer=result["answer"],
         conversation_id=conversation_id,
@@ -983,6 +1060,16 @@ async def stream_multi_turn_query(
         ):
             yield f"data: {json.dumps(event)}\n\n"
 
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+
     return StreamingResponse(
         generator(),
         media_type="text/event-stream",
@@ -1034,6 +1121,11 @@ async def upload_file(
         upload, document = await service.ingest_file(
             db, file, context.knowledge_base.id
         )
+    except EmptyFileError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        ) from e
     except UnsupportedFileTypeError as e:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

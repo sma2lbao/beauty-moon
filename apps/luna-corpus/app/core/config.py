@@ -193,6 +193,28 @@ class Settings(BaseSettings):
         description="Duplicate file policy: reject or replace",
     )
 
+    # Security / Rate limiting
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable in-process API rate limiting",
+    )
+    rate_limit_default_per_minute: int = Field(
+        default=120,
+        description="Default rate limit for API routes (requests per minute)",
+    )
+    rate_limit_qa_per_minute: int = Field(
+        default=30,
+        description="Rate limit for QA routes (requests per minute)",
+    )
+    rate_limit_upload_per_minute: int = Field(
+        default=10,
+        description="Rate limit for upload/process routes (requests per minute)",
+    )
+    max_json_body_size: int = Field(
+        default=1048576,
+        description="Maximum non-multipart request body size in bytes (1MB)",
+    )
+
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def parse_cors_allow_origins(cls, value: Any) -> list[str]:
