@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent_routes import router as agent_router
@@ -9,6 +9,9 @@ from app.api.routes import router
 from app.api.tenant_routes import router as tenant_router
 from app.core.config import get_settings
 from app.db.database import init_db
+from app.observability.logging import configure_logging
+from app.observability.metrics import render_metrics
+from app.observability.middleware import MetricsMiddleware
 from app.security.middleware import (
     BodySizeLimitMiddleware,
     RateLimitMiddleware,
@@ -28,6 +31,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    configure_logging(settings)
+
     app = FastAPI(
         title="Luna-Corpus API",
         description="RAG-based Q&A Knowledge Base System",
@@ -45,6 +50,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(MetricsMiddleware)
 
     app.include_router(router)
     app.include_router(agent_router)
@@ -54,6 +60,13 @@ def create_app() -> FastAPI:
     async def root():
         """Root endpoint."""
         return {"message": "Luna-Corpus API", "version": "1.0.0"}
+
+    @app.get("/metrics")
+    async def metrics():
+        if not settings.metrics_enabled:
+            raise HTTPException(status_code=404, detail="Not found")
+        body, content_type = render_metrics()
+        return Response(content=body, media_type=content_type)
 
     return app
 
