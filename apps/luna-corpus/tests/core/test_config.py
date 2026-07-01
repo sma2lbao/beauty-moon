@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import AppEnv, Settings, VectorStoreBackendType
+from app.core.config import AppEnv, LogFormat, Settings, VectorStoreBackendType
 
 
 def test_default_environment_settings():
@@ -130,3 +130,27 @@ def test_custom_storage_config():
     assert settings.storage_local_path == Path("/tmp/uploads")
     assert settings.max_upload_size == 10485760
     assert settings.upload_duplicate_policy == "replace"
+
+
+def test_log_format_defaults_to_json_in_production():
+    s = Settings(app_env=AppEnv.PRODUCTION, database_url="sqlite://",
+                 cors_allow_origins="https://app.example.com")
+    assert s.log_format == LogFormat.JSON
+
+
+def test_log_format_defaults_to_console_in_development():
+    s = Settings(app_env=AppEnv.DEVELOPMENT, database_url="sqlite://")
+    assert s.log_format == LogFormat.CONSOLE
+
+
+def test_metrics_enabled_defaults_true():
+    s = Settings(database_url="sqlite://")
+    assert s.metrics_enabled is True
+    assert s.log_level == "INFO"
+
+
+def test_explicit_log_format_overrides_env_default():
+    s = Settings(app_env=AppEnv.PRODUCTION, log_format=LogFormat.CONSOLE,
+                 database_url="sqlite://",
+                 cors_allow_origins="https://app.example.com")
+    assert s.log_format == LogFormat.CONSOLE
