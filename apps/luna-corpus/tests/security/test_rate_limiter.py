@@ -37,3 +37,15 @@ def test_keys_are_independent():
     for _ in range(3):
         limiter.check("user-a", 3)
     assert limiter.check("user-b", 3) is True
+
+
+def test_stale_windows_are_evicted():
+    clock = FakeClock()
+    limiter = RateLimiter(now_fn=clock)
+    limiter.check("user-a", 3)
+    assert "user-a" in limiter._windows
+    # Advance past the window and touch a different key; stale entry is dropped.
+    clock.t += 61
+    limiter.check("user-b", 3)
+    assert "user-a" not in limiter._windows
+    assert "user-b" in limiter._windows

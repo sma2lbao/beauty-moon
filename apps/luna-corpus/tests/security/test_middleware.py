@@ -17,8 +17,14 @@ def _build_app(limiter: RateLimiter, max_body: int = 1048576) -> FastAPI:
     app.add_middleware(BodySizeLimitMiddleware, max_body_size=max_body)
     app.add_middleware(RequestContextMiddleware)
 
-    @app.post("/qa/query")
+    # Mount routes under the real API prefix so category/exemption matching
+    # is exercised against production-shaped paths.
+    @app.post("/api/v1/qa/query")
     async def qa():
+        return {"ok": True}
+
+    @app.get("/api/v1/health")
+    async def health():
         return {"ok": True}
 
     @app.get("/")
@@ -29,11 +35,15 @@ def _build_app(limiter: RateLimiter, max_body: int = 1048576) -> FastAPI:
 
 
 def test_resolve_category():
+    # Prefixed (production) paths.
+    assert resolve_category("/api/v1/qa/query") == "qa"
+    assert resolve_category("/api/v1/qa/stream") == "qa"
+    assert resolve_category("/api/v1/files/upload") == "upload"
+    assert resolve_category("/api/v1/documents/abc/process") == "upload"
+    assert resolve_category("/api/v1/documents") == "default"
+    # Unprefixed paths still resolve for direct/test usage.
     assert resolve_category("/qa/query") == "qa"
-    assert resolve_category("/qa/stream") == "qa"
     assert resolve_category("/files/upload") == "upload"
-    assert resolve_category("/documents/abc/process") == "upload"
-    assert resolve_category("/documents") == "default"
 
 
 def test_request_id_generated_and_returned():
@@ -58,7 +68,7 @@ def test_rate_limit_returns_429_with_retry_after():
     limit = get_settings().rate_limit_qa_per_minute
     last = None
     for _ in range(limit + 1):
-        last = client.post("/qa/query")
+        last = client.post("/api/v1/qa/query")
     assert last.status_code == 429
     assert last.headers["Retry-After"] == "60"
 
@@ -71,7 +81,37 @@ def test_root_path_not_rate_limited():
     assert resp.status_code == 200
 
 
+def test_prefixed_health_not_rate_limited():
+    limiter = RateLimiter()
+    client = TestClient(_build_app(limiter))
+    # Health is polled frequently; the /api/v1/health path must be exempt.
+    for _ in range(200):
+        resp = client.get("/api/v1/health")
+    assert resp.status_code == 200
+
+
 def test_body_size_limit_returns_413():
     client = TestClient(_build_app(RateLimiter(), max_body=10))
-    resp = client.post("/qa/query", content=b"x" * 50)
+    resp = client.post("/api/v1/qa/query", content=b"x" * 50)
     assert resp.status_code == 413
+
+
+def test_body_size_limit_rejects_by_content_length_header():
+    # An oversized declared Content-Length is rejected without buffering.
+    client = TestClient(_build_app(RateLimiter(), max_body=10))
+    resp = client.post(
+        "/api/v1/qa/query",
+        content=b"x" * 50,
+        headers={"Content-Length": "5000"},
+    )
+    assert resp.status_code == 413
+
+
+def test_client_ip_prefers_x_forwarded_for():
+    from app.security.middleware import _client_ip
+
+    class _Req:
+        headers = {"X-Forwarded-For": "203.0.113.7, 10.0.0.1"}
+        client = None
+
+    assert _client_ip(_Req()) == "203.0.113.7"

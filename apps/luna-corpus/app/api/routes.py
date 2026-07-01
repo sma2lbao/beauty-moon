@@ -369,6 +369,7 @@ async def stream_event_generator(
 @router.post("/qa/stream")
 async def stream_query(
     question_req: QuestionRequest,
+    db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.QA_QUERY)),
@@ -378,11 +379,22 @@ async def stream_query(
 
     Args:
         question_req: Question request
+        db: Database session
         context: Request context with knowledge base scope
 
     Returns:
         StreamingResponse with SSE events
     """
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+
     return StreamingResponse(
         stream_event_generator(question_req.question, context.knowledge_base.id),
         media_type="text/event-stream",
@@ -951,6 +963,16 @@ async def multi_turn_query(
             )
         )
 
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+
     return MultiTurnAnswerResponse(
         answer=result["answer"],
         conversation_id=conversation_id,
@@ -1037,6 +1059,16 @@ async def stream_multi_turn_query(
             include_history=req.include_history,
         ):
             yield f"data: {json.dumps(event)}\n\n"
+
+    AuditService().record(
+        db,
+        action=AuditAction.QA_QUERY,
+        resource_type="knowledge_base",
+        resource_id=context.knowledge_base.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
 
     return StreamingResponse(
         generator(),

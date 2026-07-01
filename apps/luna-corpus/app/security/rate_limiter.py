@@ -20,9 +20,20 @@ class RateLimiter:
     def check(self, key: str, limit_per_minute: int) -> bool:
         """Record a hit for key; return True if within limit, else False."""
         now = self._now()
+        self._evict_stale(now)
         window_start, count = self._windows.get(key, (now, 0))
         if now - window_start >= _WINDOW_SECONDS:
             window_start, count = now, 0
         count += 1
         self._windows[key] = (window_start, count)
         return count <= limit_per_minute
+
+    def _evict_stale(self, now: float) -> None:
+        """Drop windows whose period has fully elapsed, bounding memory."""
+        stale = [
+            k
+            for k, (window_start, _) in self._windows.items()
+            if now - window_start >= _WINDOW_SECONDS
+        ]
+        for k in stale:
+            del self._windows[k]

@@ -28,10 +28,17 @@ def test_create_document_writes_audit(client, app_db):
     )
     assert resp.status_code == 201
     session = Session()
-    row = session.query(AuditLog).filter(AuditLog.action == "document.create").one()
-    assert row.result == AuditResult.SUCCESS
-    assert row.actor_user_id == user_id
-    assert row.resource_id == resp.json()["id"]
+    try:
+        row = (
+            session.query(AuditLog)
+            .filter(AuditLog.action == "document.create")
+            .one()
+        )
+        assert row.result == AuditResult.SUCCESS
+        assert row.actor_user_id == user_id
+        assert row.resource_id == resp.json()["id"]
+    finally:
+        session.close()
 
 
 @patch("app.security.audit.SessionLocal")
@@ -53,5 +60,16 @@ def test_delete_missing_document_writes_failure_audit(
     resp = client.delete("/api/v1/documents/does-not-exist", headers=headers)
     assert resp.status_code == 404
     session = Session()
-    row = session.query(AuditLog).filter(AuditLog.action == "document.delete").one()
-    assert row.result == AuditResult.FAILURE
+    try:
+        row = (
+            session.query(AuditLog)
+            .filter(AuditLog.action == "document.delete")
+            .one()
+        )
+        assert row.result == AuditResult.FAILURE
+        # Failure rows must survive the request rollback and carry the target id.
+        assert row.resource_type == "document"
+        assert row.resource_id == "does-not-exist"
+        assert row.actor_user_id == user_id
+    finally:
+        session.close()

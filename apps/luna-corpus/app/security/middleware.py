@@ -9,11 +9,21 @@ from app.core.config import get_settings
 from app.security.context import reset_request_context, set_request_context
 from app.security.rate_limiter import RateLimiter
 
-_RATE_LIMIT_EXEMPT = {"/", "/health"}
+# Live routes are mounted under this API prefix (see routes.py APIRouter).
+_API_PREFIX = "/api/v1"
+_RATE_LIMIT_EXEMPT = {"/", "/health", f"{_API_PREFIX}/health"}
+
+
+def _strip_api_prefix(path: str) -> str:
+    """Remove the API router prefix so category matching is prefix-agnostic."""
+    if path.startswith(_API_PREFIX):
+        return path[len(_API_PREFIX) :] or "/"
+    return path
 
 
 def resolve_category(path: str) -> str:
     """Map a request path to a rate-limit category."""
+    path = _strip_api_prefix(path)
     if path.startswith("/qa/"):
         return "qa"
     if path == "/files/upload" or (
@@ -59,6 +69,18 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         )
         content_type = request.headers.get("content-type", "")
         if not content_type.startswith("multipart/"):
+            # Pre-check the declared Content-Length before buffering the body,
+            # so oversized payloads are rejected without being read into memory.
+            content_length = request.headers.get("content-length")
+            if content_length is not None:
+                try:
+                    if int(content_length) > max_size:
+                        return JSONResponse(
+                            status_code=413,
+                            content={"detail": "Request body too large"},
+                        )
+                except ValueError:
+                    pass
             body = await request.body()
             if len(body) > max_size:
                 return JSONResponse(
