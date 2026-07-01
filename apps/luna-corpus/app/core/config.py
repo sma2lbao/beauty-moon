@@ -242,6 +242,16 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def _default_log_format(self) -> "Settings":
+        if self.log_format is None:
+            self.log_format = (
+                LogFormat.JSON
+                if self.app_env == AppEnv.PRODUCTION
+                else LogFormat.CONSOLE
+            )
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:
