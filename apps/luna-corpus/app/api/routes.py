@@ -120,15 +120,19 @@ class DocumentListResponse(BaseModel):
     total: int
 
 
+class ComponentHealth(BaseModel):
+    """Health status of a single dependency."""
+
+    status: str  # up | down | not_configured
+    latency_ms: float | None = None
+    provider: str | None = None
+
+
 class HealthResponse(BaseModel):
     """Health check response."""
 
-    status: str
-    mysql: str
-    chroma: str
-    ollama: str
-    ark: str
-    llm_provider: str
+    status: str  # ok | degraded
+    components: dict[str, ComponentHealth]
 
 
 class ProcessResponse(BaseModel):
@@ -1383,49 +1387,61 @@ async def get_task(
 # Health Check
 @router.get("/health", response_model=HealthResponse)
 async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthResponse:
-    """Check system health.
+    """Report per-component health (database, vectorstore, llm_provider)."""
+    import time
 
-    Args:
-        db: Database session
-
-    Returns:
-        Health status
-    """
     from app.db.vectorstore import get_vector_store
-    from app.services.llm import check_ark_health, check_ollama_health
+    from app.services.llm import (
+        check_ark_health,
+        check_doubao_health,
+        check_ollama_health,
+    )
 
     settings = get_settings()
+    components: dict[str, ComponentHealth] = {}
 
-    # Check MySQL
-    mysql_status = "connected"
+    # Database
+    start = time.perf_counter()
     try:
         db.execute(text("SELECT 1"))
         db.commit()
+        components["database"] = ComponentHealth(
+            status="up", latency_ms=round((time.perf_counter() - start) * 1000, 2)
+        )
     except Exception:
-        mysql_status = "error"
+        components["database"] = ComponentHealth(status="down")
 
-    # Check Chroma
-    chroma_status = "connected"
+    # Vector store
+    start = time.perf_counter()
     try:
         get_vector_store()
+        components["vectorstore"] = ComponentHealth(
+            status="up", latency_ms=round((time.perf_counter() - start) * 1000, 2)
+        )
     except Exception:
-        chroma_status = "error"
+        components["vectorstore"] = ComponentHealth(status="down")
 
-    # Check Ollama
-    ollama_status = "connected" if check_ollama_health() else "disconnected"
-
-    # Check Ark
-    ark_status = "configured" if check_ark_health() else "not configured"
-
-    overall_status = "ok"
-    if mysql_status != "connected" or chroma_status != "connected":
-        overall_status = "degraded"
-
-    return HealthResponse(
-        status=overall_status,
-        mysql=mysql_status,
-        chroma=chroma_status,
-        ollama=ollama_status,
-        ark=ark_status,
-        llm_provider=settings.llm_provider.value,
+    # LLM provider — only the configured provider is probed.
+    provider = settings.llm_provider.value
+    check = {
+        "ollama": check_ollama_health,
+        "ark": check_ark_health,
+        "doubao": check_doubao_health,
+    }.get(provider)
+    try:
+        healthy = bool(check()) if check else False
+        provider_status = "up" if healthy else "not_configured"
+    except Exception:
+        provider_status = "down"
+    components["llm_provider"] = ComponentHealth(
+        status=provider_status, provider=provider
     )
+
+    overall = "ok"
+    if (
+        components["database"].status == "down"
+        or components["vectorstore"].status == "down"
+    ):
+        overall = "degraded"
+
+    return HealthResponse(status=overall, components=components)
