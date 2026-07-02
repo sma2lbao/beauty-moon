@@ -285,6 +285,7 @@ def _run_index_task(task_id: str, document_id: str) -> None:
     except Exception as e:
         task_service = TaskService()
         task_service.mark_failed(db, task_id, error_message=str(e))
+        INDEX_TASK_DURATION.labels(result="failure").observe(0.0)
         AuditService().record_failure(
             action=AuditAction.DOCUMENT_INDEX,
             resource_type="document",

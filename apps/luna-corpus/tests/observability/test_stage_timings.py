@@ -29,3 +29,29 @@ def test_retrieve_node_records_duration():
         retrieve_node({"question": "q", "knowledge_base_id": "kb-1"})
     after = RAG_RETRIEVAL_DURATION._sum.get()
     assert after >= before
+
+
+def _get_count(metric, **labels):
+    """Extract observation count from a labeled Histogram via collect()."""
+    for s in metric.labels(**labels).collect():
+        for sample in s.samples:
+            if sample.name.endswith("_count"):
+                return sample.value
+    return 0.0
+
+
+def test_index_task_failure_records_metric():
+    from app.observability.metrics import INDEX_TASK_DURATION
+
+    before = _get_count(INDEX_TASK_DURATION, result="failure")
+    with patch("app.api.routes.SessionLocal") as mock_sl, patch(
+        "app.api.routes.TaskService"
+    ) as mock_ts, patch(
+        "app.services.document_processor.DocumentProcessor"
+    ) as mock_proc, patch("app.api.routes.AuditService"):
+        mock_proc.return_value.process_document.side_effect = RuntimeError("boom")
+        from app.api.routes import _run_index_task
+
+        _run_index_task("task-1", "doc-1")
+    after = _get_count(INDEX_TASK_DURATION, result="failure")
+    assert after - before == 1
