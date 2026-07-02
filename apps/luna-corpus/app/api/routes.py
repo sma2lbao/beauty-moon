@@ -40,6 +40,7 @@ from app.graph.rag_graph import (
     answer_question_stream,
 )
 from app.security.audit import AuditAction, AuditService
+from app.observability.metrics import INDEX_TASK_DURATION, time_stage
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     EmptyFileError,
@@ -268,7 +269,8 @@ def _run_index_task(task_id: str, document_id: str) -> None:
         task_service.mark_running(db, task_id)
 
         processor = DocumentProcessor()
-        processor.process_document(db, document_id)
+        with time_stage(INDEX_TASK_DURATION, result="success"):
+            processor.process_document(db, document_id)
 
         task_service.mark_completed(db, task_id)
         AuditService().record(

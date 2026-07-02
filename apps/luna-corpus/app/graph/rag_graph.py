@@ -9,6 +9,11 @@ from app.db.database import SessionLocal, get_db
 from app.db.models import Document
 from app.db.vectorstore import search_vectorstore
 from app.graph.state import RAGState
+from app.observability.metrics import (
+    LLM_GENERATION_DURATION,
+    RAG_RETRIEVAL_DURATION,
+    time_stage,
+)
 from app.services.llm import embed_text, generate_response, generate_streaming_response
 from app.services.memory import (
     format_conversation_history,
@@ -121,11 +126,12 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
     query_embedding = embed_text(question)
 
     # Search vector store
-    results = search_vectorstore(
-        query_embedding=query_embedding,
-        top_k=settings.retrieval_top_k,
-        knowledge_base_id=knowledge_base_id,
-    )
+    with time_stage(RAG_RETRIEVAL_DURATION):
+        results = search_vectorstore(
+            query_embedding=query_embedding,
+            top_k=settings.retrieval_top_k,
+            knowledge_base_id=knowledge_base_id,
+        )
 
     # Format retrieved docs
     retrieved_docs = []
@@ -196,7 +202,8 @@ def generate_node(state: RAGState) -> dict[str, Any]:
     )
 
     # Generate response
-    answer = generate_response(prompt=full_prompt, context=None)
+    with time_stage(LLM_GENERATION_DURATION, provider=settings.llm_provider.value):
+        answer = generate_response(prompt=full_prompt, context=None)
 
     # Format sources
     sources = format_sources(retrieved_docs)
