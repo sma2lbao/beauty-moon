@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
 from app.db.vectorstore import delete_chunks_from_vectorstore
+from app.retrieval.bm25 import invalidate_bm25_cache
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     EmptyFileError,
@@ -259,6 +260,9 @@ class IngestionService:
         # Delete chunks from vector store before deleting document
         if upload.document and upload.document.chunks:
             delete_chunks_from_vectorstore([c.id for c in upload.document.chunks])
+
+        # Drop keyword index so deleted chunks stop matching.
+        invalidate_bm25_cache(knowledge_base_id)
 
         # Delete associated document (which cascades to chunks in SQL)
         if upload.document:

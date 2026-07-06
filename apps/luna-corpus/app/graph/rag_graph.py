@@ -4,16 +4,15 @@ from typing import Any, AsyncGenerator
 
 from langgraph.graph import END, StateGraph
 
-from app.core.config import get_settings
+from app.core.config import RetrievalMode, get_settings
 from app.db.database import SessionLocal, get_db
 from app.db.models import Document
-from app.db.vectorstore import search_vectorstore
 from app.graph.state import RAGState
 from app.observability.metrics import (
     LLM_GENERATION_DURATION,
-    RAG_RETRIEVAL_DURATION,
     time_stage,
 )
+from app.retrieval.hybrid import hybrid_search
 from app.services.llm import embed_text, generate_response, generate_streaming_response
 from app.services.memory import (
     format_conversation_history,
@@ -125,13 +124,13 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
     # Generate query embedding
     query_embedding = embed_text(question)
 
-    # Search vector store
-    with time_stage(RAG_RETRIEVAL_DURATION):
-        results = search_vectorstore(
-            query_embedding=query_embedding,
-            top_k=settings.retrieval_top_k,
-            knowledge_base_id=knowledge_base_id,
-        )
+    # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
+    results = hybrid_search(
+        question,
+        query_embedding,
+        top_k=settings.retrieval_top_k,
+        knowledge_base_id=knowledge_base_id,
+    )
 
     # Format retrieved docs
     retrieved_docs = []
@@ -301,14 +300,20 @@ async def answer_question_stream(
 
     query_embedding = embed_text(question)
 
-    # Search vector store
+    # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
+    retrieval_status = (
+        "正在进行混合检索（向量 + 关键词）..."
+        if settings.retrieval_mode == RetrievalMode.HYBRID
+        else "正在检索相关文档..."
+    )
     yield {
         "event": "retrieval_status",
-        "data": "正在检索相似文档...",
+        "data": retrieval_status,
     }
 
-    results = search_vectorstore(
-        query_embedding=query_embedding,
+    results = hybrid_search(
+        question,
+        query_embedding,
         top_k=settings.retrieval_top_k,
         knowledge_base_id=knowledge_base_id,
     )
@@ -456,14 +461,20 @@ async def answer_question_multi_turn_stream(
 
     query_embedding = embed_text(question)
 
-    # Search vector store
+    # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
+    retrieval_status = (
+        "正在进行混合检索（向量 + 关键词）..."
+        if settings.retrieval_mode == RetrievalMode.HYBRID
+        else "正在检索相关文档..."
+    )
     yield {
         "event": "retrieval_status",
-        "data": "正在检索相似文档...",
+        "data": retrieval_status,
     }
 
-    results = search_vectorstore(
-        query_embedding=query_embedding,
+    results = hybrid_search(
+        question,
+        query_embedding,
         top_k=settings.retrieval_top_k,
         knowledge_base_id=knowledge_base_id,
     )

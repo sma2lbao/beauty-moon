@@ -9,7 +9,7 @@ def test_retrieve_node_passes_knowledge_base_filter():
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
         patch(
-            "app.graph.rag_graph.search_vectorstore",
+            "app.graph.rag_graph.hybrid_search",
             return_value=[],
         ) as search,
         patch(
@@ -20,7 +20,8 @@ def test_retrieve_node_passes_knowledge_base_filter():
         rag_graph.retrieve_node({"question": "What?", "knowledge_base_id": "kb-1"})
 
     search.assert_called_once_with(
-        query_embedding=[0.1],
+        "What?",
+        [0.1],
         top_k=rag_graph.settings.retrieval_top_k,
         knowledge_base_id="kb-1",
     )
@@ -106,7 +107,7 @@ def test_retrieve_node_validates_sources_before_returning_docs():
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
         patch(
-            "app.graph.rag_graph.search_vectorstore",
+            "app.graph.rag_graph.hybrid_search",
             return_value=[
                 {
                     "chunk_id": "chunk-1",

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Chunk, ContentStatus, ContentType, Document
 from app.db.vectorstore import add_chunks_to_vectorstore, delete_chunks_from_vectorstore
+from app.retrieval.bm25 import invalidate_bm25_cache
 from app.services.llm import embed_texts
 
 
@@ -131,6 +132,9 @@ class DocumentProcessor:
                 ],
                 embeddings=embeddings,
             )
+
+            # Refresh keyword index so new chunks are searchable immediately.
+            invalidate_bm25_cache(document.knowledge_base_id)
 
             # Update status
             document.status = ContentStatus.COMPLETED

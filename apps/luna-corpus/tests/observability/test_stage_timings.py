@@ -22,8 +22,9 @@ def test_embed_text_records_duration():
 def test_retrieve_node_records_duration():
     before = RAG_RETRIEVAL_DURATION._sum.get()
     with patch("app.graph.rag_graph.embed_text", return_value=[0.1]), patch(
-        "app.graph.rag_graph.search_vectorstore", return_value=[]
-    ):
+        "app.retrieval.hybrid.search_vectorstore", return_value=[]
+    ), patch("app.retrieval.hybrid.get_bm25_index") as bm25:
+        bm25.return_value.search.return_value = []
         from app.graph.rag_graph import retrieve_node
 
         retrieve_node({"question": "q", "knowledge_base_id": "kb-1"})
