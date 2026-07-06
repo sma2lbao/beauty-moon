@@ -33,6 +33,13 @@ class AppEnv(StrEnum):
     PRODUCTION = "production"
 
 
+class LogFormat(StrEnum):
+    """Structured log output formats."""
+
+    JSON = "json"
+    CONSOLE = "console"
+
+
 class VectorStoreBackendType(StrEnum):
     """Available vector store backends."""
 
@@ -138,6 +145,14 @@ class Settings(BaseSettings):
         default=AppEnv.DEVELOPMENT,
         description="Application runtime environment",
     )
+
+    # Observability
+    log_level: str = Field(default="INFO")
+    log_format: LogFormat | None = Field(
+        default=None,
+        description="Log output format; defaults from app_env when unset.",
+    )
+    metrics_enabled: bool = Field(default=True)
     auto_create_tables: bool = Field(
         default=False,
         description="Automatically create database tables on startup",
@@ -240,6 +255,16 @@ class Settings(BaseSettings):
         if "*" in self.cors_allow_origins:
             raise ValueError("Production cannot use wildcard CORS origins")
 
+        return self
+
+    @model_validator(mode="after")
+    def _default_log_format(self) -> "Settings":
+        if self.log_format is None:
+            self.log_format = (
+                LogFormat.JSON
+                if self.app_env == AppEnv.PRODUCTION
+                else LogFormat.CONSOLE
+            )
         return self
 
 

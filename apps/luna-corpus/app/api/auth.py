@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.context import RequestContext, get_request_context
 from app.db.database import get_db
 from app.db.models import Permission, User, WorkspaceMembership
+from app.security.context import set_identity_context
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,8 @@ def get_authenticated_context(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Missing required permission: {missing_permissions[0]}",
         )
+
+    set_identity_context(user.id, resource_context.tenant.id)
 
     return AuthenticatedRequestContext(
         tenant=resource_context.tenant,

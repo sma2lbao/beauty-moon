@@ -86,6 +86,12 @@ pnpm nx run luna-corpus:serve
 
 The API listens on `API_HOST` and `API_PORT` from `.env`.
 
+## Observability
+
+- Structured logs (JSON in production, console otherwise) carry `request_id`, `user_id`, and `tenant_id` when available. Control with `LOG_LEVEL` and `LOG_FORMAT`.
+- Prometheus metrics are exposed at `GET /metrics` (disable with `METRICS_ENABLED=false`). HTTP request counts/latency plus retrieval, embedding, LLM, and index-task timings are tracked.
+- `GET /api/v1/health` reports per-component status for `database`, `vectorstore`, and the configured `llm_provider`; overall status is `degraded` if the database or vector store is down.
+
 ## Tests
 
 Run the app test suite through Nx:

@@ -7,6 +7,7 @@ from typing import Any
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from app.core.config import LLMProvider, get_settings
+from app.observability.metrics import EMBEDDING_DURATION, time_stage
 
 settings = get_settings()
 
@@ -142,7 +143,9 @@ def embed_text(text: str) -> list[float]:
         Embedding vector
     """
     embeddings = get_embeddings_model()
-    return embeddings.embed_query(text)
+    provider = get_settings().llm_provider.value
+    with time_stage(EMBEDDING_DURATION, provider=provider):
+        return embeddings.embed_query(text)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
@@ -155,7 +158,9 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         List of embedding vectors
     """
     embeddings = get_embeddings_model()
-    return embeddings.embed_documents(texts)
+    provider = get_settings().llm_provider.value
+    with time_stage(EMBEDDING_DURATION, provider=provider):
+        return embeddings.embed_documents(texts)
 
 
 def generate_response(prompt: str, context: str | None = None) -> str:

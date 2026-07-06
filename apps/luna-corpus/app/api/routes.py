@@ -1,6 +1,7 @@
 """API routes for luna-corpus."""
 
 import json
+import time
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -39,6 +40,7 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
+from app.observability.metrics import INDEX_TASK_DURATION
 from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
@@ -119,15 +121,19 @@ class DocumentListResponse(BaseModel):
     total: int
 
 
+class ComponentHealth(BaseModel):
+    """Health status of a single dependency."""
+
+    status: str  # up | down | not_configured
+    latency_ms: float | None = None
+    provider: str | None = None
+
+
 class HealthResponse(BaseModel):
     """Health check response."""
 
-    status: str
-    mysql: str
-    chroma: str
-    ollama: str
-    ark: str
-    llm_provider: str
+    status: str  # ok | degraded
+    components: dict[str, ComponentHealth]
 
 
 class ProcessResponse(BaseModel):
@@ -263,12 +269,16 @@ def _run_index_task(task_id: str, document_id: str) -> None:
     from app.services.document_processor import DocumentProcessor
 
     db = SessionLocal()
+    start = time.perf_counter()
     try:
         task_service = TaskService()
         task_service.mark_running(db, task_id)
 
         processor = DocumentProcessor()
         processor.process_document(db, document_id)
+        INDEX_TASK_DURATION.labels(result="success").observe(
+            time.perf_counter() - start
+        )
 
         task_service.mark_completed(db, task_id)
         AuditService().record(
@@ -283,6 +293,9 @@ def _run_index_task(task_id: str, document_id: str) -> None:
     except Exception as e:
         task_service = TaskService()
         task_service.mark_failed(db, task_id, error_message=str(e))
+        INDEX_TASK_DURATION.labels(result="failure").observe(
+            time.perf_counter() - start
+        )
         AuditService().record_failure(
             action=AuditAction.DOCUMENT_INDEX,
             resource_type="document",
@@ -1380,49 +1393,60 @@ async def get_task(
 # Health Check
 @router.get("/health", response_model=HealthResponse)
 async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthResponse:
-    """Check system health.
+    """Report per-component health (database, vectorstore, llm_provider)."""
 
-    Args:
-        db: Database session
-
-    Returns:
-        Health status
-    """
     from app.db.vectorstore import get_vector_store
-    from app.services.llm import check_ark_health, check_ollama_health
+    from app.services.llm import (
+        check_ark_health,
+        check_doubao_health,
+        check_ollama_health,
+    )
 
     settings = get_settings()
+    components: dict[str, ComponentHealth] = {}
 
-    # Check MySQL
-    mysql_status = "connected"
+    # Database
+    start = time.perf_counter()
     try:
         db.execute(text("SELECT 1"))
         db.commit()
+        components["database"] = ComponentHealth(
+            status="up", latency_ms=round((time.perf_counter() - start) * 1000, 2)
+        )
     except Exception:
-        mysql_status = "error"
+        components["database"] = ComponentHealth(status="down")
 
-    # Check Chroma
-    chroma_status = "connected"
+    # Vector store
+    start = time.perf_counter()
     try:
         get_vector_store()
+        components["vectorstore"] = ComponentHealth(
+            status="up", latency_ms=round((time.perf_counter() - start) * 1000, 2)
+        )
     except Exception:
-        chroma_status = "error"
+        components["vectorstore"] = ComponentHealth(status="down")
 
-    # Check Ollama
-    ollama_status = "connected" if check_ollama_health() else "disconnected"
-
-    # Check Ark
-    ark_status = "configured" if check_ark_health() else "not configured"
-
-    overall_status = "ok"
-    if mysql_status != "connected" or chroma_status != "connected":
-        overall_status = "degraded"
-
-    return HealthResponse(
-        status=overall_status,
-        mysql=mysql_status,
-        chroma=chroma_status,
-        ollama=ollama_status,
-        ark=ark_status,
-        llm_provider=settings.llm_provider.value,
+    # LLM provider — only the configured provider is probed.
+    provider = settings.llm_provider.value
+    check = {
+        "ollama": check_ollama_health,
+        "ark": check_ark_health,
+        "doubao": check_doubao_health,
+    }.get(provider)
+    try:
+        healthy = bool(check()) if check else False
+        provider_status = "up" if healthy else "not_configured"
+    except Exception:
+        provider_status = "down"
+    components["llm_provider"] = ComponentHealth(
+        status=provider_status, provider=provider
     )
+
+    overall = "ok"
+    if (
+        components["database"].status == "down"
+        or components["vectorstore"].status == "down"
+    ):
+        overall = "degraded"
+
+    return HealthResponse(status=overall, components=components)

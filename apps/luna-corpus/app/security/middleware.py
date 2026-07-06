@@ -11,7 +11,7 @@ from app.security.rate_limiter import RateLimiter
 
 # Live routes are mounted under this API prefix (see routes.py APIRouter).
 _API_PREFIX = "/api/v1"
-_RATE_LIMIT_EXEMPT = {"/", "/health", f"{_API_PREFIX}/health"}
+_RATE_LIMIT_EXEMPT = {"/", "/health", "/metrics", f"{_API_PREFIX}/health"}
 
 
 def _strip_api_prefix(path: str) -> str:
