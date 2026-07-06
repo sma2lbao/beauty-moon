@@ -47,6 +47,13 @@ class VectorStoreBackendType(StrEnum):
     CHROMA_SERVER = "chroma_server"
 
 
+class RetrievalMode(StrEnum):
+    """Retrieval strategies."""
+
+    VECTOR = "vector"
+    HYBRID = "hybrid"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -164,6 +171,17 @@ class Settings(BaseSettings):
 
     # RAG
     retrieval_top_k: int = Field(default=5, description="Number of chunks to retrieve")
+    retrieval_mode: RetrievalMode = Field(
+        default=RetrievalMode.HYBRID,
+        description="检索模式：vector 仅向量；hybrid 向量+BM25 融合",
+    )
+    retrieval_candidate_k: int = Field(
+        default=20, description="hybrid 模式下每路检索的候选数量"
+    )
+    rrf_k: int = Field(default=60, description="RRF 融合常数")
+    bm25_cache_ttl_seconds: int = Field(
+        default=600, description="BM25 索引缓存兜底过期时间（秒）"
+    )
 
     # Conversation Memory
     conversation_memory_window: int = Field(

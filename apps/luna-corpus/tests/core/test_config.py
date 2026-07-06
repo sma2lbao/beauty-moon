@@ -154,3 +154,20 @@ def test_explicit_log_format_overrides_env_default():
                  database_url="sqlite://",
                  cors_allow_origins="https://app.example.com")
     assert s.log_format == LogFormat.CONSOLE
+
+
+def test_retrieval_mode_defaults_to_hybrid():
+    from app.core.config import RetrievalMode, Settings
+
+    settings = Settings()
+    assert settings.retrieval_mode == RetrievalMode.HYBRID
+    assert settings.retrieval_candidate_k == 20
+    assert settings.rrf_k == 60
+    assert settings.bm25_cache_ttl_seconds == 600
+
+
+def test_retrieval_mode_can_be_set_to_vector():
+    from app.core.config import RetrievalMode, Settings
+
+    settings = Settings(retrieval_mode="vector")
+    assert settings.retrieval_mode == RetrievalMode.VECTOR
