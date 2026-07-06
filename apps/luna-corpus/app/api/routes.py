@@ -1,6 +1,7 @@
 """API routes for luna-corpus."""
 
 import json
+import time
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -39,7 +40,7 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
-from app.observability.metrics import INDEX_TASK_DURATION, time_stage
+from app.observability.metrics import INDEX_TASK_DURATION
 from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
@@ -268,13 +269,16 @@ def _run_index_task(task_id: str, document_id: str) -> None:
     from app.services.document_processor import DocumentProcessor
 
     db = SessionLocal()
+    start = time.perf_counter()
     try:
         task_service = TaskService()
         task_service.mark_running(db, task_id)
 
         processor = DocumentProcessor()
-        with time_stage(INDEX_TASK_DURATION, result="success"):
-            processor.process_document(db, document_id)
+        processor.process_document(db, document_id)
+        INDEX_TASK_DURATION.labels(result="success").observe(
+            time.perf_counter() - start
+        )
 
         task_service.mark_completed(db, task_id)
         AuditService().record(
@@ -289,7 +293,9 @@ def _run_index_task(task_id: str, document_id: str) -> None:
     except Exception as e:
         task_service = TaskService()
         task_service.mark_failed(db, task_id, error_message=str(e))
-        INDEX_TASK_DURATION.labels(result="failure").observe(0.0)
+        INDEX_TASK_DURATION.labels(result="failure").observe(
+            time.perf_counter() - start
+        )
         AuditService().record_failure(
             action=AuditAction.DOCUMENT_INDEX,
             resource_type="document",
@@ -1388,7 +1394,6 @@ async def get_task(
 @router.get("/health", response_model=HealthResponse)
 async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthResponse:
     """Report per-component health (database, vectorstore, llm_provider)."""
-    import time
 
     from app.db.vectorstore import get_vector_store
     from app.services.llm import (

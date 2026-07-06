@@ -44,6 +44,7 @@ def test_index_task_failure_records_metric():
     from app.observability.metrics import INDEX_TASK_DURATION
 
     before = _get_count(INDEX_TASK_DURATION, result="failure")
+    before_success = _get_count(INDEX_TASK_DURATION, result="success")
     with patch("app.api.routes.SessionLocal"), patch(
         "app.api.routes.TaskService"
     ), patch(
@@ -54,4 +55,7 @@ def test_index_task_failure_records_metric():
 
         _run_index_task("task-1", "doc-1")
     after = _get_count(INDEX_TASK_DURATION, result="failure")
+    after_success = _get_count(INDEX_TASK_DURATION, result="success")
     assert after - before == 1
+    # A failed task must NOT also record a "success" observation.
+    assert after_success == before_success
