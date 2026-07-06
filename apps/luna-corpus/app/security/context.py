@@ -1,4 +1,4 @@
-"""Request-scoped context for request_id and client IP via contextvars."""
+"""Request-scoped context for request_id, client IP, and identity via contextvars."""
 from contextvars import ContextVar
 
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
