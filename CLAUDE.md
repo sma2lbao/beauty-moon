@@ -1,3 +1,12 @@
+# 语言规范
+
+- 始终使用中文回答问题、进行交流以及撰写文档。
+- 回复时称呼用户为 “Boss”。
+
+# 包管理器
+
+- 本工作区统一使用 `npm` 作为包管理器，所有命令默认使用 `npm`（如 `npm install`、`npm exec nx ...`），不要使用 `pnpm`。
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
