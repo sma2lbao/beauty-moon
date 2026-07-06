@@ -39,8 +39,8 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
-from app.security.audit import AuditAction, AuditService
 from app.observability.metrics import INDEX_TASK_DURATION, time_stage
+from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
     EmptyFileError,

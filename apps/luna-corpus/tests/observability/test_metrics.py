@@ -23,9 +23,8 @@ def test_time_stage_observes_on_success():
 
 def test_time_stage_observes_on_exception():
     before = EMBEDDING_DURATION.labels(provider="ark")._sum.get()
-    with pytest.raises(ValueError):
-        with time_stage(EMBEDDING_DURATION, provider="ark"):
-            raise ValueError("boom")
+    with pytest.raises(ValueError), time_stage(EMBEDDING_DURATION, provider="ark"):
+        raise ValueError("boom")
     after = EMBEDDING_DURATION.labels(provider="ark")._sum.get()
     assert after >= before
 

@@ -44,9 +44,9 @@ def test_index_task_failure_records_metric():
     from app.observability.metrics import INDEX_TASK_DURATION
 
     before = _get_count(INDEX_TASK_DURATION, result="failure")
-    with patch("app.api.routes.SessionLocal") as mock_sl, patch(
+    with patch("app.api.routes.SessionLocal"), patch(
         "app.api.routes.TaskService"
-    ) as mock_ts, patch(
+    ), patch(
         "app.services.document_processor.DocumentProcessor"
     ) as mock_proc, patch("app.api.routes.AuditService"):
         mock_proc.return_value.process_document.side_effect = RuntimeError("boom")
