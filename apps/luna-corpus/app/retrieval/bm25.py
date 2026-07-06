@@ -1,5 +1,4 @@
 """Per-knowledge-base in-memory BM25 index with lazy build and caching."""
-import re
 import time
 from dataclasses import dataclass
 
@@ -9,9 +8,7 @@ from rank_bm25 import BM25Okapi
 from app.core.config import get_settings
 from app.db.database import SessionLocal
 from app.db.models import Chunk, Document
-from app.observability.logging import get_logger
 
-logger = get_logger("luna.retrieval.bm25")
 settings = get_settings()
 
 # Built-in stop words (Chinese + English). Intentionally small; no external file.
@@ -23,7 +20,6 @@ _STOP_WORDS: frozenset[str] = frozenset(
         "are", "be", "this", "that", "with", "as", "it",
     }
 )
-_WHITESPACE = re.compile(r"\s+")
 
 
 def _now() -> float:
@@ -92,7 +88,7 @@ def _tokenize(text: str) -> list[str]:
     return [
         t
         for t in tokens
-        if t.strip() and not _WHITESPACE.fullmatch(t) and t.lower() not in _STOP_WORDS
+        if t.strip() and t.lower() not in _STOP_WORDS
     ]
 
 

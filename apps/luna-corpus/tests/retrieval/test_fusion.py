@@ -55,3 +55,27 @@ def test_output_preserves_identity_fields():
 
     assert fused[0]["document_id"] == "doc-a"
     assert fused[0]["content"] == "content a"
+
+
+def test_first_seen_identity_wins_across_lists():
+    # Same chunk_id "a" appears in both lists with different document_id/content.
+    vec = [{
+        "chunk_id": "a",
+        "document_id": "doc-vec",
+        "content": "content from vector",
+        "score": 0.9,
+    }]
+    bm25 = [{
+        "chunk_id": "a",
+        "document_id": "doc-bm25",
+        "content": "content from bm25",
+        "score": 3.0,
+    }]
+
+    fused = reciprocal_rank_fusion([vec, bm25], k=60, top_k=5)
+
+    assert len(fused) == 1
+    # First-seen list (vec) wins on identity fields, but score accumulates.
+    assert fused[0]["document_id"] == "doc-vec"
+    assert fused[0]["content"] == "content from vector"
+    assert fused[0]["score"] == 2 / 60

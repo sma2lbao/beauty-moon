@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator
 
 from langgraph.graph import END, StateGraph
 
-from app.core.config import get_settings
+from app.core.config import RetrievalMode, get_settings
 from app.db.database import SessionLocal, get_db
 from app.db.models import Document
 from app.graph.state import RAGState
@@ -301,9 +301,14 @@ async def answer_question_stream(
     query_embedding = embed_text(question)
 
     # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
+    retrieval_status = (
+        "正在进行混合检索（向量 + 关键词）..."
+        if settings.retrieval_mode == RetrievalMode.HYBRID
+        else "正在检索相关文档..."
+    )
     yield {
         "event": "retrieval_status",
-        "data": "正在进行混合检索（向量 + 关键词）...",
+        "data": retrieval_status,
     }
 
     results = hybrid_search(
@@ -457,9 +462,14 @@ async def answer_question_multi_turn_stream(
     query_embedding = embed_text(question)
 
     # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
+    retrieval_status = (
+        "正在进行混合检索（向量 + 关键词）..."
+        if settings.retrieval_mode == RetrievalMode.HYBRID
+        else "正在检索相关文档..."
+    )
     yield {
         "event": "retrieval_status",
-        "data": "正在进行混合检索（向量 + 关键词）...",
+        "data": retrieval_status,
     }
 
     results = hybrid_search(
