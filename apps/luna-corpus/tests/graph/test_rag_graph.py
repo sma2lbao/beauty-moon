@@ -22,7 +22,7 @@ def test_retrieve_node():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=mock_embedding),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=mock_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=mock_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=mock_results,
@@ -95,7 +95,7 @@ def test_answer_question():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=mock_embedding),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=mock_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=mock_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=mock_results,
@@ -115,7 +115,7 @@ def test_answer_question_no_results():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1, 0.2]),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=[]),
+        patch("app.graph.rag_graph.hybrid_search", return_value=[]),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=[],
@@ -148,7 +148,7 @@ def test_answer_question_uses_validated_sources_for_prompt():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=raw_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=raw_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=validated_results,
@@ -173,7 +173,7 @@ def test_answer_question_returns_no_results_when_validation_filters_everything()
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
         patch(
-            "app.graph.rag_graph.search_vectorstore",
+            "app.graph.rag_graph.hybrid_search",
             return_value=[
                 {
                     "chunk_id": "chunk-2",
@@ -226,7 +226,7 @@ async def test_answer_question_stream_uses_validated_sources():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=raw_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=raw_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=validated_results,
@@ -257,7 +257,7 @@ def test_answer_question_multi_turn_uses_validated_sources():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=raw_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=raw_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=raw_results,
@@ -289,7 +289,7 @@ async def test_answer_question_multi_turn_stream_uses_validated_sources():
 
     with (
         patch("app.graph.rag_graph.embed_text", return_value=[0.1]),
-        patch("app.graph.rag_graph.search_vectorstore", return_value=raw_results),
+        patch("app.graph.rag_graph.hybrid_search", return_value=raw_results),
         patch(
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=raw_results,

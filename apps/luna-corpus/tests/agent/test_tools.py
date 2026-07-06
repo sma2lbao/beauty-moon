@@ -55,7 +55,7 @@ def test_create_rag_search_tool_passes_knowledge_base_filter():
     with (
         patch("app.agent.tools.rag_search.embed_text", return_value=[0.1]),
         patch(
-            "app.agent.tools.rag_search.search_vectorstore",
+            "app.agent.tools.rag_search.hybrid_search",
             return_value=[
                 {
                     "chunk_id": "chunk-1",
@@ -68,7 +68,9 @@ def test_create_rag_search_tool_passes_knowledge_base_filter():
     ):
         result = rag_tool.executor(query="What?", top_k=3)
 
-    search.assert_called_once_with([0.1], top_k=3, knowledge_base_id="kb-1")
+    search.assert_called_once_with(
+        "What?", [0.1], top_k=3, knowledge_base_id="kb-1"
+    )
     assert "Relevant content" in result
 
 
@@ -87,7 +89,7 @@ def test_rag_search_tool_handles_empty_results():
 
     with (
         patch("app.agent.tools.rag_search.embed_text", return_value=[0.1]),
-        patch("app.agent.tools.rag_search.search_vectorstore", return_value=[]),
+        patch("app.agent.tools.rag_search.hybrid_search", return_value=[]),
     ):
         result = rag_tool.executor(query="What?")
 
@@ -100,7 +102,7 @@ def test_rag_search_tool_handles_vectorstore_error():
     with (
         patch("app.agent.tools.rag_search.embed_text", return_value=[0.1]),
         patch(
-            "app.agent.tools.rag_search.search_vectorstore",
+            "app.agent.tools.rag_search.hybrid_search",
             side_effect=RuntimeError("backend unavailable"),
         ),
     ):

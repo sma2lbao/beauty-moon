@@ -336,12 +336,12 @@ def test_query_empty_tools_uses_scoped_default_registry(client, app_db):
         with (
             patch("app.agent.tools.rag_search.embed_text", return_value=[0.1]),
             patch(
-                "app.agent.tools.rag_search.search_vectorstore", return_value=[]
+                "app.agent.tools.rag_search.hybrid_search", return_value=[]
             ) as search,
         ):
             rag_tool.executor(query="What?")
         search.assert_called_once_with(
-            [0.1], top_k=5, knowledge_base_id=context["knowledge_base_id"]
+            "What?", [0.1], top_k=5, knowledge_base_id=context["knowledge_base_id"]
         )
 
 

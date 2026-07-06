@@ -1,6 +1,6 @@
 """Knowledge-base scoped RAG search tool."""
 from app.agent.tool import Tool, tool
-from app.db.vectorstore import search_vectorstore
+from app.retrieval.hybrid import hybrid_search
 from app.services.llm import embed_text
 
 
@@ -25,7 +25,8 @@ def _format_rag_results(query: str, knowledge_base_id: str, top_k: int = 5) -> s
     """Execute scoped RAG search and format results."""
     try:
         query_embedding = embed_text(query)
-        results = search_vectorstore(
+        results = hybrid_search(
+            query,
             query_embedding,
             top_k=top_k,
             knowledge_base_id=knowledge_base_id,
