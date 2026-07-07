@@ -7,6 +7,7 @@ from app.observability.logging import get_logger
 from app.observability.metrics import RAG_RETRIEVAL_DURATION, time_stage
 from app.retrieval.bm25 import get_bm25_index
 from app.retrieval.fusion import reciprocal_rank_fusion
+from app.retrieval.rerank import rerank_results
 
 logger = get_logger("luna.retrieval.hybrid")
 settings = get_settings()
@@ -36,28 +37,35 @@ def hybrid_search(
 ) -> list[dict[str, Any]]:
     """Retrieve chunks for a query, dispatching on ``settings.retrieval_mode``.
 
-    In ``vector`` mode this is exactly the existing vector search. In
-    ``hybrid`` mode it runs vector + BM25 (each up to ``retrieval_candidate_k``)
-    and fuses them with RRF, returning ``top_k`` results. A BM25 failure
-    degrades to vector-only (logged as a warning); a vector failure propagates.
+    ``vector`` mode is plain vector search. ``hybrid`` runs vector + BM25 (each
+    up to ``retrieval_candidate_k``) fused with RRF to ``top_k``. ``rerank``
+    fuses to ``rerank_candidate_k`` candidates then cross-encoder reranks to
+    ``top_k``. BM25 failure degrades to vector-only; rerank failure degrades to
+    fused order. A vector failure propagates.
     """
+    mode = settings.retrieval_mode
+    is_fused = mode in (RetrievalMode.HYBRID, RetrievalMode.RERANK)
+    candidate_k = (
+        settings.rerank_candidate_k
+        if mode == RetrievalMode.RERANK
+        else settings.retrieval_candidate_k
+    )
+    # rerank 先融合到 candidate_k，再交给精排；hybrid 直接融合到 top_k。
+    fuse_top_k = candidate_k if mode == RetrievalMode.RERANK else top_k
+
     with time_stage(RAG_RETRIEVAL_DURATION):
         vector_results = search_vectorstore(
             query_embedding=query_embedding,
-            top_k=(
-                settings.retrieval_candidate_k
-                if settings.retrieval_mode == RetrievalMode.HYBRID
-                else top_k
-            ),
+            top_k=candidate_k if is_fused else top_k,
             knowledge_base_id=knowledge_base_id,
         )
 
-        if settings.retrieval_mode != RetrievalMode.HYBRID:
+        if not is_fused:
             return vector_results
 
         try:
             keyword_results = _bm25_results(
-                query, knowledge_base_id, settings.retrieval_candidate_k
+                query, knowledge_base_id, candidate_k
             )
         except Exception:  # BM25 must never break Q&A — degrade to vector-only.
             logger.warning(
@@ -67,8 +75,17 @@ def hybrid_search(
             )
             return vector_results[:top_k]
 
-        return reciprocal_rank_fusion(
+        fused = reciprocal_rank_fusion(
             [vector_results, keyword_results],
             k=settings.rrf_k,
-            top_k=top_k,
+            top_k=fuse_top_k,
         )
+
+        if mode == RetrievalMode.RERANK:
+            return rerank_results(
+                query,
+                fused,
+                top_k=top_k,
+                knowledge_base_id=knowledge_base_id,
+            )
+        return fused
