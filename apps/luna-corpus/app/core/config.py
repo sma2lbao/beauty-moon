@@ -52,6 +52,13 @@ class RetrievalMode(StrEnum):
 
     VECTOR = "vector"
     HYBRID = "hybrid"
+    RERANK = "rerank"
+
+
+class RerankProvider(StrEnum):
+    """Available rerank backends."""
+
+    BGE = "bge"
 
 
 class Settings(BaseSettings):
@@ -181,6 +188,22 @@ class Settings(BaseSettings):
     rrf_k: int = Field(default=60, description="RRF 融合常数")
     bm25_cache_ttl_seconds: int = Field(
         default=600, description="BM25 索引缓存兜底过期时间（秒）"
+    )
+
+    # Rerank
+    reranker_provider: RerankProvider = Field(
+        default=RerankProvider.BGE,
+        description="重排后端：bge 本地交叉编码器",
+    )
+    rerank_model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="交叉编码器模型名（sentence-transformers CrossEncoder）",
+    )
+    rerank_candidate_k: int = Field(
+        default=20, description="rerank 模式下送入精排的候选数量"
+    )
+    rerank_batch_size: int = Field(
+        default=32, description="CrossEncoder 推理批大小"
     )
 
     # Conversation Memory
