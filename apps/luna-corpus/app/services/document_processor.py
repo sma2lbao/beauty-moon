@@ -7,8 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Chunk, ContentStatus, ContentType, Document
 from app.db.vectorstore import add_chunks_to_vectorstore, delete_chunks_from_vectorstore
+from app.metadata.schema import FieldType
+from app.metadata.validation import load_field_definitions
 from app.retrieval.bm25 import invalidate_bm25_cache
+from app.retrieval.filters import to_chroma_metadata
 from app.services.llm import embed_texts
+
+
+def _field_types_for_kb(db: Session, kb_id: str) -> dict[str, FieldType]:
+    """构造知识库的 字段key -> 类型 映射。"""
+    return {f.key: f.field_type for f in load_field_definitions(db, kb_id)}
 
 
 class DocumentProcessor:
@@ -47,11 +55,14 @@ class DocumentProcessor:
             return ContentType.TABLE
         return ContentType.TEXT
 
-    def split_document(self, document: Document) -> list[dict[str, Any]]:
+    def split_document(
+        self, document: Document, doc_metadata: dict | None = None
+    ) -> list[dict[str, Any]]:
         """Split document into chunks.
 
         Args:
             document: Document to split
+            doc_metadata: Normalized document metadata to attach to each chunk
 
         Returns:
             List of chunk dictionaries
@@ -69,7 +80,7 @@ class DocumentProcessor:
                 "document_id": document.id,
                 "content": split.page_content,
                 "content_type": self.detect_content_type(split.page_content),
-                "chunk_metadata": None,
+                "chunk_metadata": doc_metadata or None,
                 "chunk_index": i,
             })
 
@@ -95,8 +106,13 @@ class DocumentProcessor:
         db.commit()
 
         try:
+            # Prepare metadata for chunks and vector store
+            doc_metadata = document.doc_metadata or {}
+            field_types = _field_types_for_kb(db, document.knowledge_base_id)
+            chroma_metadata = to_chroma_metadata(doc_metadata, field_types)
+
             # Split into chunks
-            chunk_dicts = self.split_document(document)
+            chunk_dicts = self.split_document(document, doc_metadata)
 
             # Delete existing chunks if any
             existing_chunks = (
@@ -127,6 +143,7 @@ class DocumentProcessor:
                         "document_id": c.document_id,
                         "knowledge_base_id": document.knowledge_base_id,
                         "content": c.content,
+                        "metadata": chroma_metadata,
                     }
                     for c in chunks
                 ],
