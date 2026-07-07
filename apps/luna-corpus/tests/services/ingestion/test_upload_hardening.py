@@ -1,5 +1,6 @@
 """Tests for upload hardening: empty file and actual-byte size."""
 import io
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException, UploadFile
@@ -23,6 +24,13 @@ def _upload(content: bytes, size, content_type="text/plain"):
     return file
 
 
+def _db():
+    """Minimal DB stub: no metadata field definitions registered."""
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = []
+    return db
+
+
 @pytest.mark.asyncio
 async def test_empty_file_rejected():
     service = IngestionService(
@@ -30,7 +38,7 @@ async def test_empty_file_rejected():
     )
     with pytest.raises(EmptyFileError):
         await service.ingest_file(
-            db=None, file=_upload(b"", size=0), knowledge_base_id="kb"
+            db=_db(), file=_upload(b"", size=0), knowledge_base_id="kb"
         )
 
 
@@ -41,6 +49,6 @@ async def test_actual_bytes_exceed_limit_when_size_missing():
     )
     with pytest.raises(HTTPException) as exc:
         await service.ingest_file(
-            db=None, file=_upload(b"x" * 50, size=None), knowledge_base_id="kb"
+            db=_db(), file=_upload(b"x" * 50, size=None), knowledge_base_id="kb"
         )
     assert exc.value.status_code == 413

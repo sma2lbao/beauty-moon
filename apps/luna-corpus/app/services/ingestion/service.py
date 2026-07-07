@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
 from app.db.vectorstore import delete_chunks_from_vectorstore
+from app.metadata.validation import validate_and_normalize
 from app.retrieval.bm25 import invalidate_bm25_cache
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
@@ -93,6 +94,7 @@ class IngestionService:
         db: Session,
         file: UploadFile,
         knowledge_base_id: str,
+        metadata: dict | None = None,
     ) -> tuple[FileUpload, Document | None]:
         """Ingest a file: store, parse, create document. Returns (FileUpload, Document).
 
@@ -112,6 +114,12 @@ class IngestionService:
             raise UnsupportedFileTypeError(
                 f"Unsupported file type: {mime_type}. Supported: {supported}"
             )
+
+        # Validate & normalize user-supplied metadata against KB schema. Must run
+        # before any db.add / storage.save so failures leave no half-written state.
+        normalized_metadata = validate_and_normalize(
+            db, knowledge_base_id, metadata
+        )
 
         # Read content and compute hash
         content = file.file.read()
@@ -182,6 +190,7 @@ class IngestionService:
                 has_tables="|" in parsed_text and "---" in parsed_text,
                 has_code="```" in parsed_text or "def " in parsed_text,
                 status=ContentStatus.PENDING,
+                doc_metadata=normalized_metadata or None,
             )
             db.add(document)
             db.commit()
