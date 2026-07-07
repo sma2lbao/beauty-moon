@@ -4,6 +4,7 @@ import pytest
 from app.core.config import RetrievalMode, Settings
 from app.retrieval import hybrid
 from app.retrieval.bm25 import Bm25Result
+from app.retrieval.rerank import base as rerank_base
 
 
 class _FakeBm25Index:
@@ -140,3 +141,66 @@ def test_hybrid_degrade_slice_respects_top_k(monkeypatch):
 
     assert len(results) == 5
     assert [r["chunk_id"] for r in results] == [f"c{i}" for i in range(5)]
+
+
+def test_rerank_mode_reranks_fused_candidates(monkeypatch):
+    _configure(
+        monkeypatch,
+        RetrievalMode.RERANK,
+        vector_results=[_vdoc("a"), _vdoc("b")],
+        bm25_results=[_bm25hit("c")],
+    )
+
+    # Stub reranker: pick "c" to the top to prove rerank ran after fusion.
+    class _StubReranker:
+        def rerank(self, query, candidates, *, top_k):
+            ordered = sorted(candidates, key=lambda d: d["chunk_id"] != "c")
+            return ordered[:top_k]
+
+    monkeypatch.setattr(rerank_base, "get_reranker", lambda: _StubReranker())
+
+    results = hybrid.hybrid_search(
+        "q", [0.1, 0.2], top_k=2, knowledge_base_id="kb-1"
+    )
+
+    assert results[0]["chunk_id"] == "c"
+    assert len(results) == 2
+
+
+def test_rerank_mode_overfetches_candidate_k(monkeypatch):
+    captured = _configure(
+        monkeypatch,
+        RetrievalMode.RERANK,
+        vector_results=[_vdoc("a")],
+        bm25_results=[_bm25hit("a")],
+    )
+    monkeypatch.setattr(
+        rerank_base, "get_reranker",
+        lambda: type("R", (), {"rerank": lambda self, q, c, *, top_k: c[:top_k]})(),
+    )
+
+    hybrid.hybrid_search("q", [0.1, 0.2], top_k=5, knowledge_base_id="kb-1")
+
+    assert captured["vector_top_k"] == Settings().rerank_candidate_k
+
+
+def test_rerank_mode_degrades_when_reranker_raises(monkeypatch):
+    _configure(
+        monkeypatch,
+        RetrievalMode.RERANK,
+        vector_results=[_vdoc("a"), _vdoc("b")],
+        bm25_results=[_bm25hit("c")],
+    )
+
+    def _boom():
+        raise RuntimeError("reranker down")
+
+    monkeypatch.setattr(rerank_base, "get_reranker", _boom)
+
+    results = hybrid.hybrid_search(
+        "q", [0.1, 0.2], top_k=5, knowledge_base_id="kb-1"
+    )
+
+    # Degrades to fused results; "a" (both paths) still ranks first.
+    assert results[0]["chunk_id"] == "a"
+    assert {r["chunk_id"] for r in results} == {"a", "b", "c"}

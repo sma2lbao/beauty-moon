@@ -58,6 +58,12 @@ dependencies = [
     "jieba>=0.42.1",
 ]
 
+[project.optional-dependencies]
+rerank = [
+    # Local cross-encoder reranking (bge-reranker); pulls in torch.
+    "sentence-transformers>=3.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["luna_corpus"]
 
