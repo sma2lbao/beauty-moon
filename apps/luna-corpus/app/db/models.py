@@ -331,6 +331,7 @@ class Document(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    doc_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     has_tables: Mapped[bool] = mapped_column(Boolean, default=False)
     has_code: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -501,3 +502,8 @@ class AuditLog(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# 注册元数据字段定义表到同一 Base.metadata（供建表 / alembic 发现）。
+from app.metadata.models import MetadataFieldDefinition  # noqa: E402,F401
+
