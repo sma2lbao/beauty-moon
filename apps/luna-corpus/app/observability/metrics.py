@@ -23,6 +23,10 @@ RAG_RETRIEVAL_DURATION = Histogram(
     "rag_retrieval_duration_seconds",
     "Vector retrieval latency in seconds.",
 )
+RAG_RERANK_DURATION = Histogram(
+    "rag_rerank_duration_seconds",
+    "Rerank (cross-encoder) latency in seconds.",
+)
 LLM_GENERATION_DURATION = Histogram(
     "llm_generation_duration_seconds",
     "LLM generation latency in seconds.",
