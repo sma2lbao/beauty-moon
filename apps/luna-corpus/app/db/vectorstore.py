@@ -31,6 +31,7 @@ class VectorChunkInput:
     document_id: str
     knowledge_base_id: str
     content: str
+    metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class VectorStoreBackend(Protocol):
         *,
         top_k: int,
         knowledge_base_id: str,
+        where: dict | None = None,
     ) -> list[VectorSearchResult]:
         """Search chunks within one knowledge base."""
 
@@ -111,6 +113,7 @@ class BaseChromaBackend:
                     "chunk_id": chunk.id,
                     "document_id": chunk.document_id,
                     "knowledge_base_id": chunk.knowledge_base_id,
+                    **(chunk.metadata or {}),
                 }
                 for chunk in chunks
             ],
@@ -122,13 +125,16 @@ class BaseChromaBackend:
         *,
         top_k: int,
         knowledge_base_id: str,
+        where: dict | None = None,
     ) -> list[VectorSearchResult]:
         _validate_knowledge_base_id(knowledge_base_id)
         collection = self.get_collection()
+        kb_clause = {"knowledge_base_id": knowledge_base_id}
+        merged = kb_clause if not where else {"$and": [kb_clause, where]}
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            where={"knowledge_base_id": knowledge_base_id},
+            where=merged,
         )
         return _parse_query_results(results)
 
@@ -210,6 +216,7 @@ def add_chunks_to_vectorstore(
             document_id=chunk["document_id"],
             knowledge_base_id=chunk["knowledge_base_id"],
             content=chunk["content"],
+            metadata=chunk.get("metadata"),
         )
         for chunk in chunks
     ]
@@ -220,6 +227,7 @@ def search_vectorstore(
     query_embedding: list[float],
     top_k: int | None = None,
     knowledge_base_id: str | None = None,
+    where: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Search vector store for similar chunks within one knowledge base."""
     if top_k is None:
@@ -229,6 +237,7 @@ def search_vectorstore(
         query_embedding,
         top_k=top_k,
         knowledge_base_id=knowledge_base_id,
+        where=where,
     )
     return [
         {
