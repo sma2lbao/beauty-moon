@@ -40,7 +40,7 @@ class BgeReranker(Reranker):
 
         scored = [
             {**c, "score": float(score)}
-            for c, score in zip(candidates, scores)
+            for c, score in zip(candidates, scores, strict=True)
         ]
         scored.sort(key=lambda d: d["score"], reverse=True)
         return scored[:top_k]
