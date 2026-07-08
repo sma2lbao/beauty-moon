@@ -1,5 +1,5 @@
 """Tests for document identity resolution and content hashing."""
-import time
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -76,16 +76,17 @@ def test_resolve_by_original_name_when_no_external_id(session):
 
 def test_resolve_by_name_picks_latest_updated(session):
     db, kb_id = session
-    old = Document(knowledge_base_id=kb_id, title="dup.md", content="old")
+    old = Document(knowledge_base_id=kb_id, title="dup.md", content="old",
+                   updated_at=datetime(2025, 1, 1, 12, 0, 0))
     db.add(old)
     db.commit()
-    time.sleep(1.1)  # SQLite func.now() 仅秒级精度，需确保时间戳跨秒
-    new = Document(knowledge_base_id=kb_id, title="dup.md", content="new")
+    new = Document(knowledge_base_id=kb_id, title="dup.md", content="new",
+                   updated_at=datetime(2025, 1, 1, 12, 0, 1))
     db.add(new)
     db.commit()
-    time.sleep(1.1)
     new.content = "touched"
-    db.commit()  # bumps updated_at
+    new.updated_at = datetime(2025, 1, 1, 12, 0, 2)  # 显式覆盖 onupdate
+    db.commit()
     hit = resolve_document_identity(db, kb_id, original_name="dup.md")
     assert hit.id == new.id
 
