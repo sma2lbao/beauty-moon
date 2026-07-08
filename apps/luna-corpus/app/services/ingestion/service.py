@@ -13,8 +13,12 @@ from app.db.models import ContentStatus, Document, FileUpload, FileUploadStatus
 from app.db.vectorstore import delete_chunks_from_vectorstore
 from app.metadata.validation import validate_and_normalize
 from app.retrieval.bm25 import invalidate_bm25_cache
+from app.services.document_identity import (
+    ChangeType,
+    compute_content_hash,
+    resolve_document_identity,
+)
 from app.services.ingestion.exceptions import (
-    DuplicateFileError,
     EmptyFileError,
     ParseError,
     StorageError,
@@ -74,7 +78,6 @@ class IngestionService:
         storage: StorageBackend,
         parser_registry: ParserRegistry,
         max_upload_size: int = 52428800,
-        duplicate_policy: str = "reject",
     ):
         """Initialize ingestion service.
 
@@ -82,12 +85,10 @@ class IngestionService:
             storage: Storage backend instance
             parser_registry: Parser registry instance
             max_upload_size: Maximum allowed file size in bytes
-            duplicate_policy: How to handle duplicate files: "reject" or "replace"
         """
         self.storage = storage
         self.parser_registry = parser_registry
         self.max_upload_size = max_upload_size
-        self.duplicate_policy = duplicate_policy
 
     async def ingest_file(
         self,
@@ -95,10 +96,13 @@ class IngestionService:
         file: UploadFile,
         knowledge_base_id: str,
         metadata: dict | None = None,
-    ) -> tuple[FileUpload, Document | None]:
-        """Ingest a file: store, parse, create document. Returns (FileUpload, Document).
+        external_id: str | None = None,
+    ) -> tuple[FileUpload | None, Document | None, str | None]:
+        """Ingest a file with change detection.
 
-        Document processing (chunk + vectorize) is the caller's responsibility.
+        Returns (FileUpload | None, Document | None, change_type). change_type
+        is one of ChangeType.value ("created"/"updated"/"unchanged"), or None
+        when parsing failed. Vectorization is the caller's responsibility.
         """
         # Validate file size
         if file.size and file.size > self.max_upload_size:
@@ -115,50 +119,28 @@ class IngestionService:
                 f"Unsupported file type: {mime_type}. Supported: {supported}"
             )
 
-        # Validate & normalize user-supplied metadata against KB schema. Must run
-        # before any db.add / storage.save so failures leave no half-written state.
-        normalized_metadata = validate_and_normalize(
-            db, knowledge_base_id, metadata
-        )
+        # Validate & normalize metadata before any write.
+        normalized_metadata = validate_and_normalize(db, knowledge_base_id, metadata)
 
-        # Read content and compute hash
+        # Read content and compute file-byte hash (kept for file-layer record).
         content = file.file.read()
         content_hash = _compute_hash(content)
         file.file.seek(0)
 
-        # Reject empty files
         if len(content) == 0:
             raise EmptyFileError("Uploaded file is empty")
 
-        # Enforce actual-byte size (defends against missing/spoofed Content-Length)
         if len(content) > self.max_upload_size:
             raise HTTPException(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"File too large. Maximum size: {self.max_upload_size} bytes",
             )
 
-        # Check for duplicates
-        existing = (
-            db.query(FileUpload)
-            .filter(
-                FileUpload.knowledge_base_id == knowledge_base_id,
-                FileUpload.content_hash == content_hash,
-            )
-            .first()
-        )
-        if existing:
-            if self.duplicate_policy == "reject":
-                raise DuplicateFileError(
-                    f"File already exists: {existing.original_name}"
-                )
-            # replace policy: delete old file and continue
-            await self.delete_file(db, existing.id, knowledge_base_id)
-
-        # Generate storage path and save file
         filename = file.filename or "unknown"
         stored_name = _generate_storage_path(knowledge_base_id, filename)
 
-        # Create FileUpload record first
+        # Create FileUpload record first (records the upload attempt; kept even
+        # on parse failure so the error is queryable).
         upload = FileUpload(
             knowledge_base_id=knowledge_base_id,
             original_name=filename,
@@ -173,53 +155,89 @@ class IngestionService:
         db.refresh(upload)
 
         try:
-            # Save to storage
             await self.storage.save(file, stored_name)
 
-            # Parse content
             parser = self.parser_registry.get_parser(mime_type)
             parsed_text = parser.parse(content, filename)
+            text_hash = compute_content_hash(parsed_text)
 
-            # Create Document
-            document = Document(
-                knowledge_base_id=knowledge_base_id,
-                file_id=upload.id,
-                title=filename or "Untitled",
-                content=parsed_text,
-                source=f"file://{filename}",
-                has_tables="|" in parsed_text and "---" in parsed_text,
-                has_code="```" in parsed_text or "def " in parsed_text,
-                status=ContentStatus.PENDING,
-                doc_metadata=normalized_metadata or None,
+            existing = resolve_document_identity(
+                db,
+                knowledge_base_id,
+                external_id=external_id,
+                original_name=filename,
             )
-            db.add(document)
-            db.commit()
-            db.refresh(document)
 
-            # Parsing succeeded: mark the file as parsed. Vectorization is the
-            # caller's responsibility (handled asynchronously) and is tracked
-            # separately on Document.status / IngestionTask.status.
+            has_tables = "|" in parsed_text and "---" in parsed_text
+            has_code = "```" in parsed_text or "def " in parsed_text
+
+            if existing is None:
+                # created
+                document = Document(
+                    knowledge_base_id=knowledge_base_id,
+                    file_id=upload.id,
+                    external_id=external_id,
+                    title=filename or "Untitled",
+                    content=parsed_text,
+                    content_hash=text_hash,
+                    version=1,
+                    source=f"file://{filename}",
+                    has_tables=has_tables,
+                    has_code=has_code,
+                    status=ContentStatus.PENDING,
+                    doc_metadata=normalized_metadata or None,
+                )
+                db.add(document)
+                db.commit()
+                db.refresh(document)
+                upload.status = FileUploadStatus.PARSED
+                upload.parsed_at = datetime.now()
+                db.commit()
+                db.refresh(upload)
+                return upload, document, ChangeType.CREATED.value
+
+            if existing.content_hash == text_hash:
+                # unchanged: roll back this redundant upload, keep existing doc.
+                old_file = existing.file
+                await self._discard_upload(db, upload)
+                return old_file, existing, ChangeType.UNCHANGED.value
+
+            # updated: update the existing document in place, repoint file_id,
+            # delete the previously stored file.
+            old_upload = existing.file
+            existing.content = parsed_text
+            existing.content_hash = text_hash
+            existing.version = existing.version + 1
+            existing.title = filename or existing.title
+            existing.source = f"file://{filename}"
+            existing.has_tables = has_tables
+            existing.has_code = has_code
+            existing.status = ContentStatus.PENDING
+            existing.file_id = upload.id
+            if external_id:
+                existing.external_id = external_id
+            if normalized_metadata:
+                existing.doc_metadata = normalized_metadata
             upload.status = FileUploadStatus.PARSED
             upload.parsed_at = datetime.now()
             db.commit()
-            db.refresh(upload)
-
-            return upload, document
+            db.refresh(existing)
+            if old_upload is not None and old_upload.id != upload.id:
+                await self._discard_upload(db, old_upload)
+            return upload, existing, ChangeType.UPDATED.value
 
         except ParseError as e:
             upload.status = FileUploadStatus.ERROR
             upload.error_message = str(e)
             db.commit()
-            # Clean up stored file
             with contextlib.suppress(StorageError):
                 await self.storage.delete(stored_name)
-            return upload, None
+            return upload, None, None
 
         except Exception as e:
             upload.status = FileUploadStatus.ERROR
             upload.error_message = str(e)
             db.commit()
-            # Rollback: delete document if created
             doc = (
                 db.query(Document)
                 .filter(
@@ -231,10 +249,16 @@ class IngestionService:
             if doc:
                 db.delete(doc)
                 db.commit()
-            # Clean up stored file
             with contextlib.suppress(StorageError):
                 await self.storage.delete(stored_name)
-            return upload, None
+            return upload, None, None
+
+    async def _discard_upload(self, db: Session, upload: FileUpload) -> None:
+        """Delete a FileUpload row and its stored file (no document touched)."""
+        with contextlib.suppress(StorageError):
+            await self.storage.delete(upload.stored_name)
+        db.delete(upload)
+        db.commit()
 
     async def delete_file(
         self,

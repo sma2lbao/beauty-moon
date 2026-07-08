@@ -9,8 +9,10 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
+    Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
@@ -44,8 +46,8 @@ from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
 from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
+from app.services.document_identity import ChangeType
 from app.services.ingestion.exceptions import (
-    DuplicateFileError,
     EmptyFileError,
     UnsupportedFileTypeError,
 )
@@ -258,9 +260,11 @@ class FileUploadListResponse(BaseModel):
 class FileUploadCreateResponse(BaseModel):
     """File upload creation response with document and task info."""
 
-    file: FileUploadResponse
+    file: FileUploadResponse | None
     document_id: str | None
     task_id: str | None
+    change_type: str | None = None
+    version: int | None = None
 
 
 def _run_index_task(task_id: str, document_id: str) -> None:
@@ -1112,28 +1116,19 @@ async def stream_multi_turn_query(
 @router.post(
     "/files/upload",
     response_model=FileUploadCreateResponse,
-    status_code=status.HTTP_201_CREATED,
 )
 async def upload_file(
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
     ],
+    external_id: Annotated[str | None, Form()] = None,
 ) -> FileUploadCreateResponse:
-    """Upload a file, parse it, create a document, and queue for indexing.
-
-    Args:
-        file: Uploaded file
-        background_tasks: FastAPI background tasks
-        db: Database session
-        context: Request context with knowledge base scope
-
-    Returns:
-        Created file upload, document info, and task info
-    """
+    """Upload a file with change detection; returns created/updated/unchanged."""
     storage = get_storage_backend()
     registry = get_parser_registry()
 
@@ -1141,12 +1136,11 @@ async def upload_file(
         storage=storage,
         parser_registry=registry,
         max_upload_size=get_settings().max_upload_size,
-        duplicate_policy=get_settings().upload_duplicate_policy,
     )
 
     try:
-        upload, document = await service.ingest_file(
-            db, file, context.knowledge_base.id
+        upload, document, change_type = await service.ingest_file(
+            db, file, context.knowledge_base.id, external_id=external_id
         )
     except EmptyFileError as e:
         raise HTTPException(
@@ -1158,13 +1152,7 @@ async def upload_file(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=str(e),
         ) from e
-    except DuplicateFileError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
     except Exception as e:
-        # Re-raise HTTPExceptions as-is
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(
@@ -1174,18 +1162,40 @@ async def upload_file(
 
     document_id = None
     task_id = None
+    version = None
 
     if document is not None:
         document_id = document.id
-        task_service = TaskService()
-        task = task_service.create_task(
-            db, TaskType.DOCUMENT_INDEX, document.id, context.knowledge_base.id
-        )
-        task_id = task.id
-        background_tasks.add_task(_run_index_task, task.id, document.id)
+        version = document.version
+        if change_type != ChangeType.UNCHANGED.value:
+            task_service = TaskService()
+            task = task_service.create_task(
+                db, TaskType.DOCUMENT_INDEX, document.id, context.knowledge_base.id
+            )
+            task_id = task.id
+            background_tasks.add_task(_run_index_task, task.id, document.id)
+            audit_action = (
+                AuditAction.DOCUMENT_UPDATE
+                if change_type == ChangeType.UPDATED.value
+                else AuditAction.DOCUMENT_CREATE
+            )
+            AuditService().record(
+                db,
+                action=audit_action,
+                resource_type="document",
+                resource_id=document.id,
+                result=AuditResult.SUCCESS,
+                context=context,
+            )
+            db.commit()
 
-    return FileUploadCreateResponse(
-        file=FileUploadResponse(
+    if change_type == ChangeType.CREATED.value:
+        response.status_code = status.HTTP_201_CREATED
+    else:
+        response.status_code = status.HTTP_200_OK
+
+    file_response = (
+        FileUploadResponse(
             id=upload.id,
             knowledge_base_id=upload.knowledge_base_id,
             original_name=upload.original_name,
@@ -1197,9 +1207,17 @@ async def upload_file(
             parsed_at=upload.parsed_at.isoformat() if upload.parsed_at else None,
             created_at=upload.created_at.isoformat(),
             updated_at=upload.updated_at.isoformat(),
-        ),
+        )
+        if upload is not None
+        else None
+    )
+
+    return FileUploadCreateResponse(
+        file=file_response,
         document_id=document_id,
         task_id=task_id,
+        change_type=change_type,
+        version=version,
     )
 
 

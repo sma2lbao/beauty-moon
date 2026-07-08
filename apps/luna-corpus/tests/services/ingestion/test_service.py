@@ -7,7 +7,6 @@ from fastapi import HTTPException
 
 from app.db.models import FileUpload, FileUploadStatus
 from app.services.ingestion.exceptions import (
-    DuplicateFileError,
     ParseError,
     UnsupportedFileTypeError,
 )
@@ -54,7 +53,6 @@ def ingestion_service(mock_storage, mock_parser_registry):
         storage=mock_storage,
         parser_registry=mock_parser_registry,
         max_upload_size=52428800,
-        duplicate_policy="reject",
     )
 
 
@@ -65,12 +63,15 @@ async def test_ingest_file_success(ingestion_service, mock_storage):
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
     # Mock hash check - no duplicate
-    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
 
-    upload, document = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document, change_type = await ingestion_service.ingest_file(
+        db, file, "kb-1"
+    )
 
     assert isinstance(upload, FileUpload)
     assert upload.status == FileUploadStatus.PARSED
+    assert change_type == "created"
     mock_storage.save.assert_called_once()
     db.add.assert_called()
     db.commit.assert_called()
@@ -102,50 +103,6 @@ async def test_ingest_file_too_large(ingestion_service):
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_duplicate_reject(ingestion_service):
-    """Test duplicate file rejection."""
-    db = MagicMock()
-    # Simulate existing file with same hash
-    existing = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = existing
-
-    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
-
-    with pytest.raises(DuplicateFileError):
-        await ingestion_service.ingest_file(db, file, "kb-1")
-
-
-@pytest.mark.asyncio
-async def test_ingest_file_duplicate_replace(mock_storage, mock_parser_registry):
-    """Test duplicate file replace policy."""
-    service = IngestionService(
-        storage=mock_storage,
-        parser_registry=mock_parser_registry,
-        max_upload_size=52428800,
-        duplicate_policy="replace",
-    )
-    db = MagicMock()
-    existing = MagicMock()
-    existing.id = "existing-id"
-    existing.original_name = "old.pdf"
-    existing.stored_name = "kb-1/old/old.pdf"
-    existing.document = None
-    db.query.return_value.filter.return_value.first.side_effect = [
-        existing,  # duplicate check in ingest_file
-        existing,  # lookup in delete_file
-        None,  # no duplicate after delete
-    ]
-
-    file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
-
-    upload, _ = await service.ingest_file(db, file, "kb-1")
-
-    assert isinstance(upload, FileUpload)
-    mock_storage.delete.assert_called_once()
-    db.delete.assert_called()
-
-
-@pytest.mark.asyncio
 async def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
     """Test handling of parse errors."""
     parser = MagicMock()
@@ -157,11 +114,11 @@ async def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
 
     file = _mock_upload_file("corrupted.pdf", "application/pdf", 1024, b"bad content")
 
-    result = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document, _change = await ingestion_service.ingest_file(db, file, "kb-1")
 
-    assert result[0].status == FileUploadStatus.ERROR
-    assert "Corrupted file" in result[0].error_message
-    assert result[1] is None
+    assert upload.status == FileUploadStatus.ERROR
+    assert "Corrupted file" in upload.error_message
+    assert document is None
 
 
 @pytest.mark.asyncio
@@ -211,7 +168,7 @@ async def test_ingest_file_generic_exception_rollback(ingestion_service, mock_st
 
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
-    upload, document = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document, _change = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert upload.status == FileUploadStatus.ERROR
     assert "disk exploded" in upload.error_message
