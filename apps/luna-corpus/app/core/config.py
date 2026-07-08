@@ -248,11 +248,6 @@ class Settings(BaseSettings):
         default=52428800,
         description="Maximum upload file size in bytes (50MB)",
     )
-    upload_duplicate_policy: str = Field(
-        default="reject",
-        description="Duplicate file policy: reject or replace",
-    )
-
     # Security / Rate limiting
     rate_limit_enabled: bool = Field(
         default=True,

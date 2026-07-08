@@ -9,14 +9,17 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
+    Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
@@ -44,8 +47,12 @@ from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
 from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
+from app.services.document_identity import (
+    ChangeType,
+    compute_content_hash,
+    resolve_document_identity,
+)
 from app.services.ingestion.exceptions import (
-    DuplicateFileError,
     EmptyFileError,
     UnsupportedFileTypeError,
 )
@@ -99,6 +106,7 @@ class DocumentCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     content: str = Field(..., min_length=1)
     source: str | None = None
+    external_id: str | None = Field(default=None, max_length=255)
 
 
 class DocumentResponse(BaseModel):
@@ -111,6 +119,9 @@ class DocumentResponse(BaseModel):
     has_tables: bool
     has_code: bool
     status: str
+    version: int = 1
+    external_id: str | None = None
+    change_type: str | None = None
     created_at: str
     updated_at: str
 
@@ -258,9 +269,11 @@ class FileUploadListResponse(BaseModel):
 class FileUploadCreateResponse(BaseModel):
     """File upload creation response with document and task info."""
 
-    file: FileUploadResponse
+    file: FileUploadResponse | None
     document_id: str | None
     task_id: str | None
+    change_type: str | None = None
+    version: int | None = None
 
 
 def _run_index_task(task_id: str, document_id: str) -> None:
@@ -457,9 +470,25 @@ async def create_document(
     Returns:
         Created document
     """
+    if doc.external_id:
+        conflict = resolve_document_identity(
+            db, context.knowledge_base.id, external_id=doc.external_id
+        )
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"external_id '{doc.external_id}' already exists as document "
+                    f"{conflict.id}; use PUT /documents/{{id}} to update"
+                ),
+            )
+
     db_doc = Document(
         title=doc.title,
         content=doc.content,
+        content_hash=compute_content_hash(doc.content),
+        version=1,
+        external_id=doc.external_id,
         source=doc.source,
         has_tables="|" in doc.content and "---" in doc.content,
         has_code="```" in doc.content or "def " in doc.content,
@@ -475,7 +504,14 @@ async def create_document(
         result=AuditResult.SUCCESS,
         context=context,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"external_id '{doc.external_id}' already exists; use PUT /documents/{{id}} to update",
+        )
     db.refresh(db_doc)
 
     return DocumentResponse(
@@ -486,8 +522,100 @@ async def create_document(
         has_tables=db_doc.has_tables,
         has_code=db_doc.has_code,
         status=db_doc.status.value,
+        version=db_doc.version,
+        external_id=db_doc.external_id,
+        change_type=ChangeType.CREATED.value,
         created_at=db_doc.created_at.isoformat(),
         updated_at=db_doc.updated_at.isoformat(),
+    )
+
+
+@router.put("/documents/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    document_id: str,
+    doc: DocumentCreate,
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
+) -> DocumentResponse:
+    """Update a document by id with content change detection.
+
+    Same content -> unchanged (no re-index); changed -> updated (version+1,
+    async re-index). 404 if the document is missing or outside this KB.
+    """
+    existing = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    new_hash = compute_content_hash(doc.content)
+    if existing.content_hash == new_hash:
+        change_type = ChangeType.UNCHANGED.value
+    else:
+        if doc.external_id:
+            conflict = (
+                db.query(Document)
+                .filter(
+                    Document.knowledge_base_id == context.knowledge_base.id,
+                    Document.external_id == doc.external_id,
+                    Document.id != document_id,
+                )
+                .first()
+            )
+            if conflict is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"external_id '{doc.external_id}' already belongs to document {conflict.id}",
+                )
+        existing.title = doc.title
+        existing.content = doc.content
+        existing.content_hash = new_hash
+        existing.version = existing.version + 1
+        existing.source = doc.source
+        existing.has_tables = "|" in doc.content and "---" in doc.content
+        existing.has_code = "```" in doc.content or "def " in doc.content
+        existing.status = ContentStatus.PENDING
+        if doc.external_id:
+            existing.external_id = doc.external_id
+        AuditService().record(
+            db,
+            action=AuditAction.DOCUMENT_UPDATE,
+            resource_type="document",
+            resource_id=existing.id,
+            result=AuditResult.SUCCESS,
+            context=context,
+        )
+        db.commit()
+        db.refresh(existing)
+        task_service = TaskService()
+        task = task_service.create_task(
+            db, TaskType.DOCUMENT_INDEX, existing.id, context.knowledge_base.id
+        )
+        background_tasks.add_task(_run_index_task, task.id, existing.id)
+        change_type = ChangeType.UPDATED.value
+
+    return DocumentResponse(
+        id=existing.id,
+        title=existing.title,
+        source=existing.source,
+        content=existing.content,
+        has_tables=existing.has_tables,
+        has_code=existing.has_code,
+        status=existing.status.value,
+        version=existing.version,
+        external_id=existing.external_id,
+        change_type=change_type,
+        created_at=existing.created_at.isoformat(),
+        updated_at=existing.updated_at.isoformat(),
     )
 
 
@@ -529,6 +657,8 @@ async def list_documents(
                 has_tables=doc.has_tables,
                 has_code=doc.has_code,
                 status=doc.status.value,
+                version=doc.version,
+                external_id=doc.external_id,
                 created_at=doc.created_at.isoformat(),
                 updated_at=doc.updated_at.isoformat(),
             )
@@ -576,6 +706,8 @@ async def get_document(
         has_tables=doc.has_tables,
         has_code=doc.has_code,
         status=doc.status.value,
+        version=doc.version,
+        external_id=doc.external_id,
         created_at=doc.created_at.isoformat(),
         updated_at=doc.updated_at.isoformat(),
     )
@@ -1112,28 +1244,19 @@ async def stream_multi_turn_query(
 @router.post(
     "/files/upload",
     response_model=FileUploadCreateResponse,
-    status_code=status.HTTP_201_CREATED,
 )
 async def upload_file(
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
     ],
+    external_id: Annotated[str | None, Form()] = None,
 ) -> FileUploadCreateResponse:
-    """Upload a file, parse it, create a document, and queue for indexing.
-
-    Args:
-        file: Uploaded file
-        background_tasks: FastAPI background tasks
-        db: Database session
-        context: Request context with knowledge base scope
-
-    Returns:
-        Created file upload, document info, and task info
-    """
+    """Upload a file with change detection; returns created/updated/unchanged."""
     storage = get_storage_backend()
     registry = get_parser_registry()
 
@@ -1141,12 +1264,11 @@ async def upload_file(
         storage=storage,
         parser_registry=registry,
         max_upload_size=get_settings().max_upload_size,
-        duplicate_policy=get_settings().upload_duplicate_policy,
     )
 
     try:
-        upload, document = await service.ingest_file(
-            db, file, context.knowledge_base.id
+        upload, document, change_type = await service.ingest_file(
+            db, file, context.knowledge_base.id, external_id=external_id
         )
     except EmptyFileError as e:
         raise HTTPException(
@@ -1158,13 +1280,7 @@ async def upload_file(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=str(e),
         ) from e
-    except DuplicateFileError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
     except Exception as e:
-        # Re-raise HTTPExceptions as-is
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(
@@ -1174,18 +1290,40 @@ async def upload_file(
 
     document_id = None
     task_id = None
+    version = None
 
     if document is not None:
         document_id = document.id
-        task_service = TaskService()
-        task = task_service.create_task(
-            db, TaskType.DOCUMENT_INDEX, document.id, context.knowledge_base.id
-        )
-        task_id = task.id
-        background_tasks.add_task(_run_index_task, task.id, document.id)
+        version = document.version
+        if change_type != ChangeType.UNCHANGED.value:
+            task_service = TaskService()
+            task = task_service.create_task(
+                db, TaskType.DOCUMENT_INDEX, document.id, context.knowledge_base.id
+            )
+            task_id = task.id
+            background_tasks.add_task(_run_index_task, task.id, document.id)
+            audit_action = (
+                AuditAction.DOCUMENT_UPDATE
+                if change_type == ChangeType.UPDATED.value
+                else AuditAction.DOCUMENT_CREATE
+            )
+            AuditService().record(
+                db,
+                action=audit_action,
+                resource_type="document",
+                resource_id=document.id,
+                result=AuditResult.SUCCESS,
+                context=context,
+            )
+            db.commit()
 
-    return FileUploadCreateResponse(
-        file=FileUploadResponse(
+    if change_type == ChangeType.CREATED.value:
+        response.status_code = status.HTTP_201_CREATED
+    else:
+        response.status_code = status.HTTP_200_OK
+
+    file_response = (
+        FileUploadResponse(
             id=upload.id,
             knowledge_base_id=upload.knowledge_base_id,
             original_name=upload.original_name,
@@ -1197,9 +1335,17 @@ async def upload_file(
             parsed_at=upload.parsed_at.isoformat() if upload.parsed_at else None,
             created_at=upload.created_at.isoformat(),
             updated_at=upload.updated_at.isoformat(),
-        ),
+        )
+        if upload is not None
+        else None
+    )
+
+    return FileUploadCreateResponse(
+        file=file_response,
         document_id=document_id,
         task_id=task_id,
+        change_type=change_type,
+        version=version,
     )
 
 

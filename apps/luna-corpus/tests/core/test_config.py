@@ -113,7 +113,6 @@ def test_default_storage_config():
     assert settings.storage_backend == "local"
     assert settings.storage_local_path == Path("data/uploads")
     assert settings.max_upload_size == 52428800
-    assert settings.upload_duplicate_policy == "reject"
 
 
 def test_custom_storage_config():
@@ -124,12 +123,10 @@ def test_custom_storage_config():
         storage_backend="s3",
         storage_local_path="/tmp/uploads",
         max_upload_size=10485760,
-        upload_duplicate_policy="replace",
     )
     assert settings.storage_backend == "s3"
     assert settings.storage_local_path == Path("/tmp/uploads")
     assert settings.max_upload_size == 10485760
-    assert settings.upload_duplicate_policy == "replace"
 
 
 def test_log_format_defaults_to_json_in_production():

@@ -132,7 +132,7 @@ def test_upload_file_success(
 
     registry = mock_registry.return_value
     registry.is_supported.return_value = True
-    parser = type("Parser", (), {"parse": lambda self, c, n: "Parsed text"})()
+    parser = type("Parser", (), {"parse": lambda self, c, n: c.decode("utf-8")})()
     registry.get_parser.return_value = parser
 
     # Make background task inert: mock SessionLocal and DocumentProcessor
@@ -150,6 +150,8 @@ def test_upload_file_success(
     assert data["file"]["mime_type"] == "text/plain"
     assert "task_id" in data
     assert data["document_id"] is not None
+    assert data["change_type"] == "created"
+    assert data["version"] == 1
 
 
 @patch("app.api.routes.get_storage_backend")
@@ -187,3 +189,147 @@ def test_delete_file_requires_auth(client):
     """Test delete file requires authentication."""
     response = client.delete("/api/v1/files/file-1")
     assert response.status_code == 400
+
+
+@patch("app.services.document_processor.DocumentProcessor")
+@patch("app.api.routes.SessionLocal")
+@patch("app.api.routes.get_storage_backend")
+@patch("app.api.routes.get_parser_registry")
+def test_upload_same_name_same_content_unchanged(
+    mock_registry, mock_storage, mock_session_local, mock_processor, client, app_db
+):
+    """Re-uploading identical content under same name -> unchanged, no task."""
+    _, Session, context = app_db
+    user_id = create_user_with_permissions(
+        Session, context["workspace_id"], "u", [PermissionSlug.DOCUMENT_WRITE]
+    )
+    storage = mock_storage.return_value
+
+    async def mock_save(f, p):
+        return p
+
+    async def mock_delete(p):
+        return None
+
+    storage.save = mock_save
+    storage.delete = mock_delete
+    registry = mock_registry.return_value
+    registry.is_supported.return_value = True
+    parser = type("Parser", (), {"parse": lambda self, c, n: c.decode("utf-8")})()
+    registry.get_parser.return_value = parser
+    mock_processor.return_value.process_document.return_value = None
+    headers = _auth_headers(context, context["kb_one_id"], user_id)
+
+    first = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("doc.txt", io.BytesIO(b"same body"), "text/plain")},
+    )
+    assert first.status_code == 201
+    assert first.json()["change_type"] == "created"
+
+    second = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("doc.txt", io.BytesIO(b"same body"), "text/plain")},
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["change_type"] == "unchanged"
+    assert body["task_id"] is None
+    assert body["version"] == 1
+    assert body["document_id"] == first.json()["document_id"]
+    assert body["file"] is not None
+
+
+@patch("app.services.document_processor.DocumentProcessor")
+@patch("app.api.routes.SessionLocal")
+@patch("app.api.routes.get_storage_backend")
+@patch("app.api.routes.get_parser_registry")
+def test_upload_same_name_new_content_updated(
+    mock_registry, mock_storage, mock_session_local, mock_processor, client, app_db
+):
+    """Re-uploading changed content under same name -> updated, version bumps."""
+    _, Session, context = app_db
+    user_id = create_user_with_permissions(
+        Session, context["workspace_id"], "u", [PermissionSlug.DOCUMENT_WRITE]
+    )
+    storage = mock_storage.return_value
+
+    async def mock_save(f, p):
+        return p
+
+    async def mock_delete(p):
+        return None
+
+    storage.save = mock_save
+    storage.delete = mock_delete
+    registry = mock_registry.return_value
+    registry.is_supported.return_value = True
+    parser = type("Parser", (), {"parse": lambda self, c, n: c.decode("utf-8")})()
+    registry.get_parser.return_value = parser
+    mock_processor.return_value.process_document.return_value = None
+    headers = _auth_headers(context, context["kb_one_id"], user_id)
+
+    first = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("doc.txt", io.BytesIO(b"version one"), "text/plain")},
+    )
+    doc_id = first.json()["document_id"]
+
+    second = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("doc.txt", io.BytesIO(b"version two"), "text/plain")},
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["change_type"] == "updated"
+    assert body["version"] == 2
+    assert body["task_id"] is not None
+    assert body["document_id"] == doc_id
+
+
+@patch("app.services.document_processor.DocumentProcessor")
+@patch("app.api.routes.SessionLocal")
+@patch("app.api.routes.get_storage_backend")
+@patch("app.api.routes.get_parser_registry")
+def test_upload_renamed_same_content_creates_new(
+    mock_registry, mock_storage, mock_session_local, mock_processor, client, app_db
+):
+    """Same content under a different name -> created (no global dedup)."""
+    _, Session, context = app_db
+    user_id = create_user_with_permissions(
+        Session, context["workspace_id"], "u", [PermissionSlug.DOCUMENT_WRITE]
+    )
+    storage = mock_storage.return_value
+
+    async def mock_save(f, p):
+        return p
+
+    async def mock_delete(p):
+        return None
+
+    storage.save = mock_save
+    storage.delete = mock_delete
+    registry = mock_registry.return_value
+    registry.is_supported.return_value = True
+    parser = type("Parser", (), {"parse": lambda self, c, n: c.decode("utf-8")})()
+    registry.get_parser.return_value = parser
+    mock_processor.return_value.process_document.return_value = None
+    headers = _auth_headers(context, context["kb_one_id"], user_id)
+
+    a = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("a.txt", io.BytesIO(b"shared body"), "text/plain")},
+    )
+    b = client.post(
+        "/api/v1/files/upload",
+        headers=headers,
+        files={"file": ("b.txt", io.BytesIO(b"shared body"), "text/plain")},
+    )
+    assert b.status_code == 201
+    assert b.json()["change_type"] == "created"
+    assert b.json()["document_id"] != a.json()["document_id"]

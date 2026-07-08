@@ -15,6 +15,7 @@ class AuditAction(str, enum.Enum):
     """Audited action vocabulary."""
 
     DOCUMENT_CREATE = "document.create"
+    DOCUMENT_UPDATE = "document.update"
     DOCUMENT_DELETE = "document.delete"
     DOCUMENT_INDEX = "document.index"
     QA_QUERY = "qa.query"
