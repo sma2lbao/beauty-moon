@@ -46,7 +46,11 @@ from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
 from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
-from app.services.document_identity import ChangeType
+from app.services.document_identity import (
+    ChangeType,
+    compute_content_hash,
+    resolve_document_identity,
+)
 from app.services.ingestion.exceptions import (
     EmptyFileError,
     UnsupportedFileTypeError,
@@ -101,6 +105,7 @@ class DocumentCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     content: str = Field(..., min_length=1)
     source: str | None = None
+    external_id: str | None = Field(default=None, max_length=255)
 
 
 class DocumentResponse(BaseModel):
@@ -113,6 +118,9 @@ class DocumentResponse(BaseModel):
     has_tables: bool
     has_code: bool
     status: str
+    version: int = 1
+    external_id: str | None = None
+    change_type: str | None = None
     created_at: str
     updated_at: str
 
@@ -461,9 +469,25 @@ async def create_document(
     Returns:
         Created document
     """
+    if doc.external_id:
+        conflict = resolve_document_identity(
+            db, context.knowledge_base.id, external_id=doc.external_id
+        )
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"external_id '{doc.external_id}' already exists as document "
+                    f"{conflict.id}; use PUT /documents/{{id}} to update"
+                ),
+            )
+
     db_doc = Document(
         title=doc.title,
         content=doc.content,
+        content_hash=compute_content_hash(doc.content),
+        version=1,
+        external_id=doc.external_id,
         source=doc.source,
         has_tables="|" in doc.content and "---" in doc.content,
         has_code="```" in doc.content or "def " in doc.content,
@@ -490,8 +514,85 @@ async def create_document(
         has_tables=db_doc.has_tables,
         has_code=db_doc.has_code,
         status=db_doc.status.value,
+        version=db_doc.version,
+        external_id=db_doc.external_id,
+        change_type=ChangeType.CREATED.value,
         created_at=db_doc.created_at.isoformat(),
         updated_at=db_doc.updated_at.isoformat(),
+    )
+
+
+@router.put("/documents/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    document_id: str,
+    doc: DocumentCreate,
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.DOCUMENT_WRITE)),
+    ],
+) -> DocumentResponse:
+    """Update a document by id with content change detection.
+
+    Same content -> unchanged (no re-index); changed -> updated (version+1,
+    async re-index). 404 if the document is missing or outside this KB.
+    """
+    existing = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    new_hash = compute_content_hash(doc.content)
+    if existing.content_hash == new_hash:
+        change_type = ChangeType.UNCHANGED.value
+    else:
+        existing.title = doc.title
+        existing.content = doc.content
+        existing.content_hash = new_hash
+        existing.version = existing.version + 1
+        existing.source = doc.source
+        existing.has_tables = "|" in doc.content and "---" in doc.content
+        existing.has_code = "```" in doc.content or "def " in doc.content
+        existing.status = ContentStatus.PENDING
+        if doc.external_id:
+            existing.external_id = doc.external_id
+        AuditService().record(
+            db,
+            action=AuditAction.DOCUMENT_UPDATE,
+            resource_type="document",
+            resource_id=existing.id,
+            result=AuditResult.SUCCESS,
+            context=context,
+        )
+        db.commit()
+        db.refresh(existing)
+        task_service = TaskService()
+        task = task_service.create_task(
+            db, TaskType.DOCUMENT_INDEX, existing.id, context.knowledge_base.id
+        )
+        background_tasks.add_task(_run_index_task, task.id, existing.id)
+        change_type = ChangeType.UPDATED.value
+
+    return DocumentResponse(
+        id=existing.id,
+        title=existing.title,
+        source=existing.source,
+        content=existing.content,
+        has_tables=existing.has_tables,
+        has_code=existing.has_code,
+        status=existing.status.value,
+        version=existing.version,
+        external_id=existing.external_id,
+        change_type=change_type,
+        created_at=existing.created_at.isoformat(),
+        updated_at=existing.updated_at.isoformat(),
     )
 
 
