@@ -26,6 +26,8 @@ class RAGState(TypedDict):
     sources: list[dict]
     processing_time_ms: int | None
     needs_summarization: bool
+    filters: dict | None
+    field_types: dict | None
 
 
 class DocumentProcessingState(TypedDict):

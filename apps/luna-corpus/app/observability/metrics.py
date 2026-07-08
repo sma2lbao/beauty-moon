@@ -27,6 +27,10 @@ RAG_RERANK_DURATION = Histogram(
     "rag_rerank_duration_seconds",
     "Rerank (cross-encoder) latency in seconds.",
 )
+RAG_FACET_DURATION = Histogram(
+    "rag_facet_duration_seconds",
+    "Facet aggregation latency in seconds.",
+)
 LLM_GENERATION_DURATION = Histogram(
     "llm_generation_duration_seconds",
     "LLM generation latency in seconds.",

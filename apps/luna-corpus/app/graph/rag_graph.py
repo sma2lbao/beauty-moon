@@ -8,10 +8,12 @@ from app.core.config import RetrievalMode, get_settings
 from app.db.database import SessionLocal, get_db
 from app.db.models import Document
 from app.graph.state import RAGState
+from app.metadata.schema import FieldType
 from app.observability.metrics import (
     LLM_GENERATION_DURATION,
     time_stage,
 )
+from app.retrieval.filters import MetadataFilter
 from app.retrieval.hybrid import hybrid_search
 from app.services.llm import embed_text, generate_response, generate_streaming_response
 from app.services.memory import (
@@ -124,12 +126,23 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
     # Generate query embedding
     query_embedding = embed_text(question)
 
+    filters_raw = state.get("filters")
+    field_types_raw = state.get("field_types")
+    filters = MetadataFilter(**filters_raw) if filters_raw else None
+    field_types = (
+        {k: FieldType(v) for k, v in field_types_raw.items()}
+        if field_types_raw
+        else None
+    )
+
     # Retrieve documents (vector or hybrid, per settings.retrieval_mode)
     results = hybrid_search(
         question,
         query_embedding,
         top_k=settings.retrieval_top_k,
         knowledge_base_id=knowledge_base_id,
+        filters=filters,
+        field_types=field_types,
     )
 
     # Format retrieved docs
@@ -246,12 +259,19 @@ def get_rag_graph() -> StateGraph:
     return _rag_graph
 
 
-def answer_question(question: str, knowledge_base_id: str) -> dict[str, Any]:
+def answer_question(
+    question: str,
+    knowledge_base_id: str,
+    filters: dict | None = None,
+    field_types: dict | None = None,
+) -> dict[str, Any]:
     """Answer a question using RAG.
 
     Args:
         question: User question
         knowledge_base_id: Knowledge base ID for retrieval filtering
+        filters: Optional MetadataFilter serialized as dict
+        field_types: Optional mapping of field key to FieldType value
 
     Returns:
         Answer with sources and metadata
@@ -266,6 +286,8 @@ def answer_question(question: str, knowledge_base_id: str) -> dict[str, Any]:
         "conversation_history": [],
         "retrieved_docs": [],
         "needs_summarization": False,
+        "filters": filters,
+        "field_types": field_types,
     })
 
     processing_time_ms = int((time.time() - start_time) * 1000)

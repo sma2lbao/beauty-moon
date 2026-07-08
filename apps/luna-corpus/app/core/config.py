@@ -189,6 +189,10 @@ class Settings(BaseSettings):
     bm25_cache_ttl_seconds: int = Field(
         default=600, description="BM25 索引缓存兜底过期时间（秒）"
     )
+    filter_over_fetch_multiplier: int = Field(
+        default=3,
+        description="有元数据过滤时放大候选窗口的倍数，补偿 post-filter 损耗",
+    )
 
     # Rerank
     reranker_provider: RerankProvider = Field(

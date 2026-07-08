@@ -1,5 +1,7 @@
 """Knowledge-base scoped RAG search tool."""
 from app.agent.tool import Tool, tool
+from app.metadata.schema import FieldType
+from app.retrieval.filters import MetadataFilter
 from app.retrieval.hybrid import hybrid_search
 from app.services.llm import embed_text
 
@@ -21,7 +23,13 @@ _RAG_SEARCH_PARAMETERS = {
 }
 
 
-def _format_rag_results(query: str, knowledge_base_id: str, top_k: int = 5) -> str:
+def _format_rag_results(
+    query: str,
+    knowledge_base_id: str,
+    top_k: int = 5,
+    filters: MetadataFilter | None = None,
+    field_types: dict[str, FieldType] | None = None,
+) -> str:
     """Execute scoped RAG search and format results."""
     try:
         query_embedding = embed_text(query)
@@ -30,6 +38,8 @@ def _format_rag_results(query: str, knowledge_base_id: str, top_k: int = 5) -> s
             query_embedding,
             top_k=top_k,
             knowledge_base_id=knowledge_base_id,
+            filters=filters,
+            field_types=field_types,
         )
 
         if not results:
@@ -51,7 +61,11 @@ def _format_rag_results(query: str, knowledge_base_id: str, top_k: int = 5) -> s
         return f"Error searching knowledge base: {str(e)}"
 
 
-def create_rag_search_tool(knowledge_base_id: str) -> Tool:
+def create_rag_search_tool(
+    knowledge_base_id: str,
+    filters: MetadataFilter | None = None,
+    field_types: dict[str, FieldType] | None = None,
+) -> Tool:
     """Create a RAG search tool scoped to one knowledge base."""
 
     def _get_rag_results(query: str, top_k: int = 5) -> str:
@@ -59,6 +73,8 @@ def create_rag_search_tool(knowledge_base_id: str) -> Tool:
             query=query,
             top_k=top_k,
             knowledge_base_id=knowledge_base_id,
+            filters=filters,
+            field_types=field_types,
         )
 
     return tool(

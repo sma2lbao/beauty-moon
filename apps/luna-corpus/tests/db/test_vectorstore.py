@@ -122,7 +122,7 @@ def test_search_vectorstore_handles_missing_metadata(monkeypatch, temp_chroma_di
     from app.db import vectorstore
 
     class Backend:
-        def search(self, query_embedding, *, top_k, knowledge_base_id):
+        def search(self, query_embedding, *, top_k, knowledge_base_id, where=None):
             return [
                 vectorstore.VectorSearchResult(
                     chunk_id=None,

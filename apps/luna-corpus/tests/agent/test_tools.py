@@ -69,7 +69,12 @@ def test_create_rag_search_tool_passes_knowledge_base_filter():
         result = rag_tool.executor(query="What?", top_k=3)
 
     search.assert_called_once_with(
-        "What?", [0.1], top_k=3, knowledge_base_id="kb-1"
+        "What?",
+        [0.1],
+        top_k=3,
+        knowledge_base_id="kb-1",
+        filters=None,
+        field_types=None,
     )
     assert "Relevant content" in result
 

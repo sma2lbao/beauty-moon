@@ -40,7 +40,9 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
+from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
+from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
 from app.services.ingestion.exceptions import (
     DuplicateFileError,
@@ -71,6 +73,7 @@ class QuestionRequest(BaseModel):
 
     question: str = Field(..., min_length=1, max_length=1000)
     top_k: int = Field(default=5, ge=1, le=20)
+    filters: MetadataFilter | None = None
 
 
 class SourceResponse(BaseModel):
@@ -327,9 +330,20 @@ async def query(
     Returns:
         Answer with sources
     """
+    filters_payload = None
+    field_types_payload = None
+    if question_req.filters and question_req.filters.conditions:
+        filters_payload = question_req.filters.model_dump()
+        field_types_payload = {
+            f.key: f.field_type.value
+            for f in load_field_definitions(db, context.knowledge_base.id)
+        }
+
     result = answer_question(
         question_req.question,
         knowledge_base_id=context.knowledge_base.id,
+        filters=filters_payload,
+        field_types=field_types_payload,
     )
 
     # Enrich sources with document titles

@@ -36,3 +36,10 @@ def test_db_revision_target_runs_alembic_autogenerate():
         target["options"]["command"]
         == "uv run alembic -c alembic.ini revision --autogenerate"
     )
+
+
+def test_filter_over_fetch_multiplier_default():
+    from app.core.config import Settings
+
+    settings = Settings()
+    assert settings.filter_over_fetch_multiplier == 3

@@ -183,7 +183,10 @@ def test_qa_query_passes_current_knowledge_base(client, app_db):
 
     assert response.status_code == 200
     answer_question.assert_called_once_with(
-        "What?", knowledge_base_id=context["kb_one_id"]
+        "What?",
+        knowledge_base_id=context["kb_one_id"],
+        filters=None,
+        field_types=None,
     )
 
 
