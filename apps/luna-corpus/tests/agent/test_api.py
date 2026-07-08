@@ -341,7 +341,12 @@ def test_query_empty_tools_uses_scoped_default_registry(client, app_db):
         ):
             rag_tool.executor(query="What?")
         search.assert_called_once_with(
-            "What?", [0.1], top_k=5, knowledge_base_id=context["knowledge_base_id"]
+            "What?",
+            [0.1],
+            top_k=5,
+            knowledge_base_id=context["knowledge_base_id"],
+            filters=None,
+            field_types=None,
         )
 
 
