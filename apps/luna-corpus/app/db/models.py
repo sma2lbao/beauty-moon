@@ -319,6 +319,11 @@ class Document(Base):
     """Document model."""
 
     __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "knowledge_base_id", "external_id", name="uq_documents_kb_external"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(
         CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -329,10 +334,13 @@ class Document(Base):
     file_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("file_uploads.id"), nullable=True
     )
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     doc_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     has_tables: Mapped[bool] = mapped_column(Boolean, default=False)
     has_code: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[ContentStatus] = mapped_column(
