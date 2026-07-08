@@ -2,6 +2,7 @@
 
 import contextlib
 import hashlib
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,8 @@ from app.services.ingestion.exceptions import (
 )
 from app.services.ingestion.parsers import ParserRegistry
 from app.services.ingestion.storage import StorageBackend
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_filename(filename: str) -> str:
@@ -257,8 +260,12 @@ class IngestionService:
         """Delete a FileUpload row and its stored file (no document touched)."""
         with contextlib.suppress(StorageError):
             await self.storage.delete(upload.stored_name)
-        db.delete(upload)
-        db.commit()
+        try:
+            db.delete(upload)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.warning("Failed to discard FileUpload %s; leaving orphan row", upload.id)
 
     async def delete_file(
         self,

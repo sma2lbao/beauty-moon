@@ -245,3 +245,43 @@ async def test_ingest_file_updated(ingestion_service, mock_storage):
     assert existing.file_id == upload.id  # file_id repointed to new upload
     # _discard_upload deletes the old upload's stored file
     mock_storage.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_updated_discard_db_error_does_not_propagate(
+    ingestion_service, mock_storage
+):
+    """DB error during _discard_upload of old upload is logged, update still succeeds."""
+    db = MagicMock()
+
+    parsed_text = "Parsed content"
+
+    existing = MagicMock()
+    existing.id = "existing-doc-id"
+    existing.content_hash = "oldhash"
+    existing.version = 3
+    existing.file = MagicMock()
+    existing.file.id = "old-upload-id"
+    existing.file.stored_name = "old/path.pdf"
+
+    # Make db.delete raise to simulate a DB error during discard
+    db.delete = MagicMock(side_effect=Exception("DB connection lost"))
+
+    with patch(
+        "app.services.ingestion.service.resolve_document_identity",
+        return_value=existing,
+    ):
+        file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+        upload, document, change_type = await ingestion_service.ingest_file(
+            db, file, "kb-1"
+        )
+
+    # Update should still succeed despite discard failure
+    assert change_type == "updated"
+    assert existing.version == 4
+    assert existing.content == parsed_text
+    assert existing.file_id == upload.id
+    # Storage delete still attempted (before the DB delete in _discard_upload)
+    mock_storage.delete.assert_called_once()
+    # db.rollback should have been called after the failed delete
+    db.rollback.assert_called()

@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -289,6 +290,74 @@ def test_put_document_unchanged_no_task_created(mock_run_index, client, app_db):
         )
     finally:
         sess.close()
+
+
+def test_create_document_integrity_error_returns_409(client, app_db):
+    """TOCTOU: IntegrityError on commit -> 409 instead of 500."""
+    from sqlalchemy.orm import Session as SASession
+
+    _, Session, context = app_db
+    uid = _user(Session, context["workspace_id"], [PermissionSlug.DOCUMENT_WRITE])
+
+    # First create a document with external_id="X"
+    first = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "hello", "external_id": "X"},
+    )
+    assert first.status_code == 201
+
+    # Patch sqlalchemy.orm.Session.commit to raise IntegrityError,
+    # simulating a TOCTOU race where a concurrent request sneaks in.
+    with patch.object(
+        SASession, "commit",
+        side_effect=IntegrityError("INSERT", {}, Exception("duplicate key")),
+    ):
+        dup = client.post(
+            "/api/v1/documents",
+            headers=_headers(context, uid),
+            json={"title": "T2", "content": "other", "external_id": "X"},
+        )
+        assert dup.status_code == 409, (
+            f"expected 409, got {dup.status_code}: {dup.json()}"
+        )
+        assert "external_id" in dup.json()["detail"].lower()
+
+
+@patch("app.api.routes._run_index_task")
+def test_put_document_external_id_conflict_returns_409(mock_run_index, client, app_db):
+    """PUT changing external_id to one already owned by another doc -> 409."""
+    _, Session, context = app_db
+    uid = _user(Session, context["workspace_id"],
+                [PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_READ])
+
+    # Doc A with external_id="X"
+    doc_a = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "A", "content": "content A", "external_id": "X"},
+    )
+    assert doc_a.status_code == 201
+
+    # Doc B with different content, no external_id
+    doc_b = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "B", "content": "content B"},
+    )
+    assert doc_b.status_code == 201
+    doc_b_id = doc_b.json()["id"]
+
+    # PUT doc B with external_id="X" + changed content -> 409
+    conflict = client.put(
+        f"/api/v1/documents/{doc_b_id}",
+        headers=_headers(context, uid),
+        json={"title": "B", "content": "content B updated", "external_id": "X"},
+    )
+    assert conflict.status_code == 409, (
+        f"expected 409, got {conflict.status_code}: {conflict.json()}"
+    )
+    assert "X" in conflict.json()["detail"]
 
 
 def test_put_document_cross_kb_forbidden(client, app_db):

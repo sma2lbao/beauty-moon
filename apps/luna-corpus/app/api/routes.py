@@ -19,6 +19,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
@@ -503,7 +504,14 @@ async def create_document(
         result=AuditResult.SUCCESS,
         context=context,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"external_id '{doc.external_id}' already exists; use PUT /documents/{{id}} to update",
+        )
     db.refresh(db_doc)
 
     return DocumentResponse(
@@ -553,6 +561,21 @@ async def update_document(
     if existing.content_hash == new_hash:
         change_type = ChangeType.UNCHANGED.value
     else:
+        if doc.external_id:
+            conflict = (
+                db.query(Document)
+                .filter(
+                    Document.knowledge_base_id == context.knowledge_base.id,
+                    Document.external_id == doc.external_id,
+                    Document.id != document_id,
+                )
+                .first()
+            )
+            if conflict is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"external_id '{doc.external_id}' already belongs to document {conflict.id}",
+                )
         existing.title = doc.title
         existing.content = doc.content
         existing.content_hash = new_hash
