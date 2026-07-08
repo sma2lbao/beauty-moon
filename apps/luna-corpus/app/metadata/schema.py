@@ -1,7 +1,12 @@
 """元数据字段类型与字段定义 Pydantic 模型。"""
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# 向量库 chunk metadata 的保留标识键，业务字段不得占用（否则会污染 kb 隔离）。
+RESERVED_METADATA_KEYS = frozenset(
+    {"chunk_id", "document_id", "knowledge_base_id"}
+)
 
 
 class FieldType(StrEnum):
@@ -23,6 +28,13 @@ class FieldDefinitionCreate(BaseModel):
     options: list[str] | None = None
     required: bool = False
     is_facetable: bool = True
+
+    @field_validator("key")
+    @classmethod
+    def _reject_reserved_key(cls, value: str) -> str:
+        if value in RESERVED_METADATA_KEYS:
+            raise ValueError(f"保留键不可用作元数据字段: {value}")
+        return value
 
 
 class FieldDefinitionUpdate(BaseModel):

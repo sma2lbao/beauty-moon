@@ -110,10 +110,12 @@ class BaseChromaBackend:
             embeddings=embeddings,
             metadatas=[
                 {
+                    # Business metadata first, then fixed keys so the reserved
+                    # identity keys always win over any same-named custom field.
+                    **(chunk.metadata or {}),
                     "chunk_id": chunk.id,
                     "document_id": chunk.document_id,
                     "knowledge_base_id": chunk.knowledge_base_id,
-                    **(chunk.metadata or {}),
                 }
                 for chunk in chunks
             ],
