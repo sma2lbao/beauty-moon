@@ -24,6 +24,8 @@ def test_retrieve_node_passes_knowledge_base_filter():
         [0.1],
         top_k=rag_graph.settings.retrieval_top_k,
         knowledge_base_id="kb-1",
+        filters=None,
+        field_types=None,
     )
 
 

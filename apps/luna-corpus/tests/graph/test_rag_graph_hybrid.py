@@ -5,7 +5,7 @@ from app.graph import rag_graph
 def test_retrieve_node_calls_hybrid_search(monkeypatch):
     captured = {}
 
-    def fake_hybrid(query, query_embedding, *, top_k, knowledge_base_id):
+    def fake_hybrid(query, query_embedding, *, top_k, knowledge_base_id, filters=None, field_types=None):
         captured["query"] = query
         captured["kb"] = knowledge_base_id
         return [
