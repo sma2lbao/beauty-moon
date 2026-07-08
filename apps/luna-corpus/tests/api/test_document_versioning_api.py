@@ -159,3 +159,162 @@ def test_put_document_not_found(client, app_db):
         json={"title": "T", "content": "x"},
     )
     assert resp.status_code == 404
+
+
+@patch("app.api.routes._run_index_task")
+def test_get_document_returns_version_and_external_id(mock_run_index, client, app_db):
+    """Regression: GET /documents/{id} and GET /documents expose version and external_id."""
+    _, Session, context = app_db
+    uid = _user(Session, context["workspace_id"],
+                [PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_READ])
+
+    # Create doc with external_id and version=1
+    created = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "v1", "external_id": "HR-9"},
+    )
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    # PUT update to bump version to 2
+    updated = client.put(
+        f"/api/v1/documents/{doc_id}",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "v2"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["version"] == 2
+
+    # GET single document should return version=2 and external_id="HR-9"
+    get_resp = client.get(
+        f"/api/v1/documents/{doc_id}",
+        headers=_headers(context, uid),
+    )
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["version"] == 2, f"expected version=2, got {body['version']}"
+    assert body["external_id"] == "HR-9", f"expected external_id='HR-9', got {body['external_id']}"
+
+    # GET list should also include the correct version/external_id
+    list_resp = client.get(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+    )
+    assert list_resp.status_code == 200
+    docs = list_resp.json()["documents"]
+    assert len(docs) >= 1
+    found = next(d for d in docs if d["id"] == doc_id)
+    assert found["version"] == 2
+    assert found["external_id"] == "HR-9"
+
+
+@patch("app.api.routes._run_index_task")
+def test_put_document_null_content_hash(mock_run_index, client, app_db):
+    """I1: existing document with content_hash=None should be treated as updated."""
+    engine, Session, context = app_db
+    uid = _user(Session, context["workspace_id"],
+                [PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_READ])
+
+    # Directly insert a document with content_hash=None via DB session
+    sess = Session()
+    try:
+        from app.db.models import Document
+        import uuid
+
+        doc = Document(
+            id=str(uuid.uuid4()),
+            title="Legacy",
+            content="legacy content",
+            content_hash=None,
+            version=1,
+            knowledge_base_id=context["kb_one_id"],
+        )
+        sess.add(doc)
+        sess.commit()
+        doc_id = doc.id
+    finally:
+        sess.close()
+
+    # PUT update should detect mismatch and treat as updated
+    updated = client.put(
+        f"/api/v1/documents/{doc_id}",
+        headers=_headers(context, uid),
+        json={"title": "Legacy", "content": "new content"},
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["change_type"] == "updated"
+    assert body["version"] == 2
+
+
+@patch("app.api.routes._run_index_task")
+def test_put_document_unchanged_no_task_created(mock_run_index, client, app_db):
+    """I2: unchanged PUT must not create an IngestionTask row."""
+    engine, Session, context = app_db
+    uid = _user(Session, context["workspace_id"], [PermissionSlug.DOCUMENT_WRITE])
+
+    created = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "v1"},
+    )
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    # Count existing IngestionTask rows
+    sess = Session()
+    try:
+        from app.db.models import IngestionTask
+        task_count_before = sess.query(IngestionTask).count()
+    finally:
+        sess.close()
+
+    # Unchanged PUT
+    same = client.put(
+        f"/api/v1/documents/{doc_id}",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "v1"},
+    )
+    assert same.status_code == 200
+    assert same.json()["change_type"] == "unchanged"
+
+    # No new IngestionTask row should have been created
+    sess = Session()
+    try:
+        task_count_after = sess.query(IngestionTask).count()
+        assert task_count_after == task_count_before, (
+            f"unchanged PUT should not create IngestionTask; "
+            f"before={task_count_before}, after={task_count_after}"
+        )
+    finally:
+        sess.close()
+
+
+def test_put_document_cross_kb_forbidden(client, app_db):
+    """M2: PUT to a document in kb_one with a different KB header must return 404."""
+    engine, Session, context = app_db
+    uid = _user(Session, context["workspace_id"],
+                [PermissionSlug.DOCUMENT_WRITE, PermissionSlug.DOCUMENT_READ])
+
+    # Create a document in kb_one
+    created = client.post(
+        "/api/v1/documents",
+        headers=_headers(context, uid),
+        json={"title": "T", "content": "secret"},
+    )
+    assert created.status_code == 201
+    doc_id = created.json()["id"]
+
+    # Use a different (non-existent) knowledge_base_id header
+    wrong_headers = {
+        **dict(_headers(context, uid)),
+        "X-Knowledge-Base-Id": "00000000-0000-0000-0000-000000000000",
+    }
+    resp = client.put(
+        f"/api/v1/documents/{doc_id}",
+        headers=wrong_headers,
+        json={"title": "T", "content": "stolen"},
+    )
+    # The auth layer validates the KB exists, so we expect 4xx (403 or 404)
+    assert resp.status_code in (403, 404), f"unexpected status {resp.status_code}"

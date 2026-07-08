@@ -634,6 +634,8 @@ async def list_documents(
                 has_tables=doc.has_tables,
                 has_code=doc.has_code,
                 status=doc.status.value,
+                version=doc.version,
+                external_id=doc.external_id,
                 created_at=doc.created_at.isoformat(),
                 updated_at=doc.updated_at.isoformat(),
             )
@@ -681,6 +683,8 @@ async def get_document(
         has_tables=doc.has_tables,
         has_code=doc.has_code,
         status=doc.status.value,
+        version=doc.version,
+        external_id=doc.external_id,
         created_at=doc.created_at.isoformat(),
         updated_at=doc.updated_at.isoformat(),
     )
