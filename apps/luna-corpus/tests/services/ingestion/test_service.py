@@ -110,15 +110,16 @@ async def test_ingest_file_parse_error(ingestion_service, mock_parser_registry):
     mock_parser_registry.get_parser.return_value = parser
 
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
 
     file = _mock_upload_file("corrupted.pdf", "application/pdf", 1024, b"bad content")
 
-    upload, document, _change = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document, change_type = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert upload.status == FileUploadStatus.ERROR
     assert "Corrupted file" in upload.error_message
     assert document is None
+    assert change_type is None
 
 
 @pytest.mark.asyncio
@@ -164,13 +165,83 @@ async def test_ingest_file_generic_exception_rollback(ingestion_service, mock_st
     mock_storage.save = AsyncMock(side_effect=RuntimeError("disk exploded"))
 
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
 
     file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
 
-    upload, document, _change = await ingestion_service.ingest_file(db, file, "kb-1")
+    upload, document, change_type = await ingestion_service.ingest_file(db, file, "kb-1")
 
     assert upload.status == FileUploadStatus.ERROR
     assert "disk exploded" in upload.error_message
     assert document is None
+    assert change_type is None
+    mock_storage.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_unchanged(ingestion_service, mock_storage):
+    """Re-uploading same content -> unchanged (no version bump, discard upload, keep existing)."""
+    db = MagicMock()
+
+    # parser returns fixed text, compute its hash
+    parsed_text = "Parsed content"
+    from app.services.document_identity import compute_content_hash
+
+    text_hash = compute_content_hash(parsed_text)
+
+    # existing document with matching content hash
+    existing = MagicMock()
+    existing.id = "existing-doc-id"
+    existing.content_hash = text_hash
+    existing.version = 3
+    existing.file = MagicMock()
+    existing.file.id = "old-upload-id"
+    existing.file.stored_name = "old/path.pdf"
+
+    with patch(
+        "app.services.ingestion.service.resolve_document_identity",
+        return_value=existing,
+    ):
+        file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+        upload, document, change_type = await ingestion_service.ingest_file(
+            db, file, "kb-1"
+        )
+
+    assert change_type == "unchanged"
+    assert existing.version == 3  # not bumped
+    assert document is existing  # returns existing document, not new one
+    # _discard_upload deletes the newly created upload's stored file
+    mock_storage.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_updated(ingestion_service, mock_storage):
+    """Re-uploading changed content -> updated (version+1, repoint file_id, discard old upload)."""
+    db = MagicMock()
+
+    parsed_text = "Parsed content"
+
+    # existing document with different content hash
+    existing = MagicMock()
+    existing.id = "existing-doc-id"
+    existing.content_hash = "oldhash"  # different from computed
+    existing.version = 3
+    existing.file = MagicMock()
+    existing.file.id = "old-upload-id"
+    existing.file.stored_name = "old/path.pdf"
+
+    with patch(
+        "app.services.ingestion.service.resolve_document_identity",
+        return_value=existing,
+    ):
+        file = _mock_upload_file("test.pdf", "application/pdf", 1024, b"pdf content")
+        upload, document, change_type = await ingestion_service.ingest_file(
+            db, file, "kb-1"
+        )
+
+    assert change_type == "updated"
+    assert existing.version == 4  # bumped
+    assert existing.content == parsed_text  # content updated
+    assert existing.file_id == upload.id  # file_id repointed to new upload
+    # _discard_upload deletes the old upload's stored file
     mock_storage.delete.assert_called_once()

@@ -239,6 +239,7 @@ def test_upload_same_name_same_content_unchanged(
     assert body["task_id"] is None
     assert body["version"] == 1
     assert body["document_id"] == first.json()["document_id"]
+    assert body["file"] is not None
 
 
 @patch("app.services.document_processor.DocumentProcessor")
