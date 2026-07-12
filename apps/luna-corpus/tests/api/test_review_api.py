@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth.permissions import PermissionSlug
 from app.db.database import get_db
 from app.db.models import (
+    AuditLog,
     Base,
     EvaluationStatus,
     FeedbackRating,
@@ -177,6 +178,21 @@ def test_resolve_then_leaves_queue(client, app_db):
     )
     assert resolved.json()["total"] == 1
 
+    # 断言审计已落库：使用独立 session 查询同一个 SQLite 引擎。
+    audit_session = Session()
+    try:
+        row = (
+            audit_session.query(AuditLog)
+            .filter(
+                AuditLog.action == "qa.review_resolve",
+                AuditLog.resource_id == iid,
+            )
+            .one()
+        )
+        assert row is not None
+    finally:
+        audit_session.close()
+
 
 def test_dismiss_leaves_queue(client, app_db):
     _, Session, context = app_db
@@ -201,5 +217,17 @@ def test_resolve_cross_kb_404(client, app_db):
         f"/api/v1/qa/reviews/{iid}/resolve",
         headers=_headers(context, uid, kb_key="kb_two_id"),
         json={"root_cause": "other", "resolution_note": "x"},
+    )
+    assert r.status_code == 404
+
+
+def test_dismiss_cross_kb_404(client, app_db):
+    _, Session, context = app_db
+    iid = _seed_down_interaction(Session, context["kb_one_id"])
+    uid = _user(Session, context["workspace_id"], [PermissionSlug.QA_REVIEW])
+    r = client.post(
+        f"/api/v1/qa/reviews/{iid}/dismiss",
+        headers=_headers(context, uid, kb_key="kb_two_id"),
+        json={"resolution_note": "x"},
     )
     assert r.status_code == 404

@@ -79,11 +79,12 @@ def list_reviews(
     status_filter: str = "queue",
     limit: int = 50,
     offset: int = 0,
-) -> list[dict]:
-    """Derive the review list for a KB.
+) -> tuple[list[dict], int]:
+    """派生指定知识库的审核列表，返回 ``(当前页, 满足条件的总数)``。
 
-    status_filter="queue": interactions triggering a signal with no terminal
-    review. "resolved"/"dismissed": interactions whose review is in that state.
+    ``status_filter="queue"``：存在信号且尚未进入终态 review 的交互；
+    ``"resolved"`` / ``"dismissed"``：review 处于对应终态的交互。
+    ``total`` 是分页切片**前**的完整过滤结果长度，便于上层展示分页总数。
     """
     interactions = (
         db.query(QAInteraction)
@@ -117,7 +118,7 @@ def list_reviews(
                 "review_status": review.status.value if review else None,
             }
         )
-    return rows[offset : offset + limit]
+    return rows[offset : offset + limit], len(rows)
 
 
 def _feedback_dicts(db: Session, interaction_id: str) -> list[dict]:

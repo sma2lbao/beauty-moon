@@ -190,6 +190,15 @@ class ReviewActionResponse(BaseModel):
     root_cause: str | None = None
 
 
+class ReviewDetailResponse(BaseModel):
+    """Full triage detail for one interaction."""
+
+    interaction: dict
+    feedback: list[dict]
+    evaluation: dict | None = None
+    review: dict | None = None
+
+
 class DocumentCreate(BaseModel):
     """Document creation model."""
 
@@ -625,7 +634,7 @@ async def list_review_queue(
     offset: int = Query(default=0, ge=0),
 ) -> ReviewListResponse:
     """Derived review queue for the current knowledge base."""
-    rows = list_reviews(
+    rows, total = list_reviews(
         db,
         context.knowledge_base.id,
         status_filter=status,
@@ -633,11 +642,11 @@ async def list_review_queue(
         offset=offset,
     )
     return ReviewListResponse(
-        reviews=[ReviewListItem(**r) for r in rows], total=len(rows)
+        reviews=[ReviewListItem(**r) for r in rows], total=total
     )
 
 
-@router.get("/qa/reviews/{interaction_id}")
+@router.get("/qa/reviews/{interaction_id}", response_model=ReviewDetailResponse)
 async def review_detail(
     interaction_id: str,
     db: Annotated[Session, Depends(get_db)],
@@ -645,12 +654,12 @@ async def review_detail(
         AuthenticatedRequestContext,
         Depends(require_permission(PermissionSlug.QA_REVIEW)),
     ],
-) -> dict:
+) -> ReviewDetailResponse:
     """Full triage detail for one interaction."""
     detail = get_review_detail(db, context.knowledge_base.id, interaction_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Interaction not found")
-    return detail
+    return ReviewDetailResponse(**detail)
 
 
 @router.post(

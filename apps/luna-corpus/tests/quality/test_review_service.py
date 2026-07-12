@@ -64,8 +64,9 @@ def test_thumbs_down_enters_queue():
     session = _session()
     i = _interaction(session)
     _add_feedback(session, i.id, FeedbackRating.DOWN)
-    rows = list_reviews(session, KB)
+    rows, total = list_reviews(session, KB)
     assert len(rows) == 1
+    assert total == 1
     assert rows[0]["interaction_id"] == i.id
     assert rows[0]["signals"]["thumbs_down"] is True
     assert rows[0]["signals"]["low_score"] is False
@@ -75,8 +76,9 @@ def test_low_score_enters_queue():
     session = _session()
     i = _interaction(session)
     _add_eval(session, i.id, faith=0.5, rel=0.9)
-    rows = list_reviews(session, KB)
+    rows, total = list_reviews(session, KB)
     assert len(rows) == 1
+    assert total == 1
     assert rows[0]["signals"]["low_score"] is True
 
 
@@ -84,7 +86,7 @@ def test_threshold_is_strict_less_than():
     session = _session()
     i = _interaction(session)
     _add_eval(session, i.id, faith=0.6, rel=0.6)  # == 0.6, not < 0.6
-    assert list_reviews(session, KB) == []
+    assert list_reviews(session, KB)[0] == []
 
 
 def test_thumbs_up_and_good_score_not_in_queue():
@@ -92,14 +94,14 @@ def test_thumbs_up_and_good_score_not_in_queue():
     i = _interaction(session)
     _add_feedback(session, i.id, FeedbackRating.UP)
     _add_eval(session, i.id, faith=0.9, rel=0.9)
-    assert list_reviews(session, KB) == []
+    assert list_reviews(session, KB)[0] == []
 
 
 def test_pending_eval_does_not_trigger():
     session = _session()
     i = _interaction(session)
     _add_eval(session, i.id, faith=0.1, rel=0.1, status=EvaluationStatus.PENDING)
-    assert list_reviews(session, KB) == []
+    assert list_reviews(session, KB)[0] == []
 
 
 def test_resolved_review_leaves_queue():
@@ -111,9 +113,10 @@ def test_resolved_review_leaves_queue():
         root_cause=ReviewRootCause.KNOWLEDGE_GAP, note="fixed", user_id="u1",
     )
     session.commit()
-    assert list_reviews(session, KB) == []
-    resolved = list_reviews(session, KB, status_filter="resolved")
+    assert list_reviews(session, KB)[0] == []
+    resolved, resolved_total = list_reviews(session, KB, status_filter="resolved")
     assert len(resolved) == 1
+    assert resolved_total == 1
     assert resolved[0]["review_status"] == "resolved"
 
 
@@ -154,3 +157,14 @@ def test_detail_returns_signals_and_review():
     assert len(detail["feedback"]) == 1
     assert detail["evaluation"]["faithfulness"] == 0.4
     assert detail["review"] is None
+
+
+def test_pagination_total_reflects_full_filtered_count():
+    """limit 生效时，total 仍应反映切片前的总条目数。"""
+    session = _session()
+    for _ in range(3):
+        it = _interaction(session)
+        _add_feedback(session, it.id, FeedbackRating.DOWN)
+    rows, total = list_reviews(session, KB, limit=2)
+    assert len(rows) == 2
+    assert total == 3
