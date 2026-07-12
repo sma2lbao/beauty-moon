@@ -31,6 +31,8 @@ from app.db.models import (
     ContentStatus,
     Conversation,
     Document,
+    FeedbackErrorType,
+    FeedbackRating,
     FileUpload,
     Message,
     MessageRole,
@@ -45,6 +47,10 @@ from app.graph.rag_graph import (
 )
 from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
+from app.quality.aggregation import summarize_quality
+from app.quality.feedback import create_feedback, get_interaction
+from app.quality.recorder import record_interaction, should_evaluate
+from app.quality.tasks import _run_eval_task, create_pending_evaluation
 from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
 from app.services.document_identity import (
@@ -98,6 +104,36 @@ class AnswerResponse(BaseModel):
     answer: str
     sources: list[SourceResponse]
     processing_time_ms: int
+    answer_id: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """User feedback on an answer."""
+
+    rating: FeedbackRating
+    error_type: FeedbackErrorType | None = None
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackResponse(BaseModel):
+    """Feedback creation response."""
+
+    id: str
+    interaction_id: str
+    rating: str
+
+
+class QualitySummaryResponse(BaseModel):
+    """Aggregated quality metrics for a knowledge base / time window."""
+
+    total_interactions: int
+    feedback_count: int
+    thumbs_up_rate: float | None
+    avg_faithfulness: float | None
+    avg_relevance: float | None
+    avg_citation_accuracy: float | None
+    error_type_breakdown: dict[str, int]
+    by_retrieval_mode: dict[str, int]
 
 
 class DocumentCreate(BaseModel):
@@ -239,6 +275,7 @@ class MultiTurnAnswerResponse(BaseModel):
     conversation_id: str
     sources: list[SourceResponse]
     processing_time_ms: int
+    answer_id: str | None = None
 
 
 class FileUploadResponse(BaseModel):
@@ -327,6 +364,7 @@ def _run_index_task(task_id: str, document_id: str) -> None:
 @router.post("/qa/query", response_model=AnswerResponse)
 async def query(
     question_req: QuestionRequest,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
@@ -380,10 +418,26 @@ async def query(
     )
     db.commit()
 
+    answer_id = record_interaction(
+        db,
+        knowledge_base_id=context.knowledge_base.id,
+        question=question_req.question,
+        answer=result["answer"],
+        sources=result["sources"],
+        retrieval_mode=result.get("retrieval_mode"),
+        processing_time_ms=result["processing_time_ms"],
+    )
+
+    if answer_id and should_evaluate():
+        eval_id = create_pending_evaluation(db, answer_id)
+        if eval_id:
+            background_tasks.add_task(_run_eval_task, eval_id)
+
     return AnswerResponse(
         answer=result["answer"],
         sources=enriched_sources,
         processing_time_ms=result["processing_time_ms"],
+        answer_id=answer_id,
     )
 
 
@@ -444,6 +498,65 @@ async def stream_query(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post(
+    "/qa/interactions/{answer_id}/feedback",
+    response_model=FeedbackResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_feedback(
+    answer_id: str,
+    feedback_req: FeedbackRequest,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_FEEDBACK)),
+    ],
+) -> FeedbackResponse:
+    """Submit thumbs up/down feedback on a recorded Q&A interaction."""
+    interaction = get_interaction(db, answer_id, context.knowledge_base.id)
+    if interaction is None:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    feedback = create_feedback(
+        db,
+        interaction_id=answer_id,
+        rating=feedback_req.rating,
+        error_type=feedback_req.error_type,
+        comment=feedback_req.comment,
+        created_by_user_id=context.user.id,
+    )
+    AuditService().record(
+        db,
+        action=AuditAction.QA_FEEDBACK,
+        resource_type="qa_interaction",
+        resource_id=answer_id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+    db.refresh(feedback)
+
+    return FeedbackResponse(
+        id=feedback.id,
+        interaction_id=feedback.interaction_id,
+        rating=feedback.rating.value,
+    )
+
+
+@router.get("/qa/quality/summary", response_model=QualitySummaryResponse)
+async def quality_summary(
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
+    days: int = Query(default=7, ge=1, le=365),
+) -> QualitySummaryResponse:
+    """Aggregated quality metrics for the current knowledge base."""
+    summary = summarize_quality(db, context.knowledge_base.id, days=days)
+    return QualitySummaryResponse(**summary)
 
 
 # Document Management
@@ -1057,6 +1170,7 @@ async def clear_conversation_endpoint(
 @router.post("/qa/multi-turn", response_model=MultiTurnAnswerResponse)
 async def multi_turn_query(
     req: MultiTurnQuestionRequest,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     context: Annotated[
         AuthenticatedRequestContext,
@@ -1132,11 +1246,28 @@ async def multi_turn_query(
     )
     db.commit()
 
+    answer_id = record_interaction(
+        db,
+        knowledge_base_id=context.knowledge_base.id,
+        question=req.question,
+        answer=result["answer"],
+        sources=result["sources"],
+        retrieval_mode=result.get("retrieval_mode"),
+        processing_time_ms=result["processing_time_ms"],
+        conversation_id=conversation_id,
+    )
+
+    if answer_id and should_evaluate():
+        eval_id = create_pending_evaluation(db, answer_id)
+        if eval_id:
+            background_tasks.add_task(_run_eval_task, eval_id)
+
     return MultiTurnAnswerResponse(
         answer=result["answer"],
         conversation_id=conversation_id,
         sources=enriched_sources,
         processing_time_ms=result["processing_time_ms"],
+        answer_id=answer_id,
     )
 
 
