@@ -210,6 +210,14 @@ class Settings(BaseSettings):
         default=32, description="CrossEncoder 推理批大小"
     )
 
+    # Quality Evaluation
+    quality_eval_sample_rate: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="对问答交互触发 LLM 自动评分的采样率（0=从不，1=全部）",
+    )
+
     # Conversation Memory
     conversation_memory_window: int = Field(
         default=10, description="Number of recent messages to include in context"
