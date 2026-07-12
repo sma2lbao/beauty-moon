@@ -383,6 +383,9 @@ class Chunk(Base):
     )
     chunk_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    heading_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
