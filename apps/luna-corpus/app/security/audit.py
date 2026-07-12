@@ -20,6 +20,8 @@ class AuditAction(str, enum.Enum):
     DOCUMENT_INDEX = "document.index"
     QA_QUERY = "qa.query"
     QA_FEEDBACK = "qa.feedback"
+    QA_REVIEW_RESOLVE = "qa.review_resolve"
+    QA_REVIEW_DISMISS = "qa.review_dismiss"
 
 
 def _scope(context):

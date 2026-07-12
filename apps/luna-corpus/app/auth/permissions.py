@@ -14,6 +14,7 @@ class PermissionSlug:
     CONVERSATION_DELETE = "conversation:delete"
     QA_QUERY = "qa:query"
     QA_FEEDBACK = "qa:feedback"
+    QA_REVIEW = "qa:review"
 
 
 class RoleSlug:
@@ -36,6 +37,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         PermissionSlug.CONVERSATION_DELETE,
         PermissionSlug.QA_QUERY,
         PermissionSlug.QA_FEEDBACK,
+        PermissionSlug.QA_REVIEW,
     ),
     RoleSlug.KB_EDITOR: (
         PermissionSlug.WORKSPACE_READ,
@@ -48,6 +50,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         PermissionSlug.CONVERSATION_DELETE,
         PermissionSlug.QA_QUERY,
         PermissionSlug.QA_FEEDBACK,
+        PermissionSlug.QA_REVIEW,
     ),
     RoleSlug.KB_READER: (
         PermissionSlug.WORKSPACE_READ,

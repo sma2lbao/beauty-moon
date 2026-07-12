@@ -36,6 +36,7 @@ from app.db.models import (
     FileUpload,
     Message,
     MessageRole,
+    ReviewRootCause,
     TaskStatus,
     TaskType,
 )
@@ -50,6 +51,12 @@ from app.observability.metrics import INDEX_TASK_DURATION
 from app.quality.aggregation import summarize_quality
 from app.quality.feedback import create_feedback, get_interaction
 from app.quality.recorder import record_interaction, should_evaluate
+from app.quality.review import (
+    dismiss_review,
+    get_review_detail,
+    list_reviews,
+    resolve_review,
+)
 from app.quality.tasks import _run_eval_task, create_pending_evaluation
 from app.retrieval.filters import MetadataFilter
 from app.security.audit import AuditAction, AuditService
@@ -134,6 +141,62 @@ class QualitySummaryResponse(BaseModel):
     avg_citation_accuracy: float | None
     error_type_breakdown: dict[str, int]
     by_retrieval_mode: dict[str, int]
+
+
+class ReviewSignals(BaseModel):
+    """Which signal(s) queued this interaction for review."""
+
+    thumbs_down: bool
+    low_score: bool
+
+
+class ReviewListItem(BaseModel):
+    """One row in the review queue."""
+
+    interaction_id: str
+    question: str
+    answer: str
+    retrieval_mode: str | None = None
+    created_at: str | None = None
+    signals: ReviewSignals
+    review_status: str | None = None
+
+
+class ReviewListResponse(BaseModel):
+    """Paginated review queue."""
+
+    reviews: list[ReviewListItem]
+    total: int
+
+
+class ReviewResolveRequest(BaseModel):
+    """Resolve a review with a root cause."""
+
+    root_cause: ReviewRootCause
+    resolution_note: str | None = Field(default=None, max_length=2000)
+
+
+class ReviewDismissRequest(BaseModel):
+    """Dismiss a review as not actionable."""
+
+    resolution_note: str | None = Field(default=None, max_length=2000)
+
+
+class ReviewActionResponse(BaseModel):
+    """Result of a resolve/dismiss action."""
+
+    interaction_id: str
+    status: str
+    root_cause: str | None = None
+
+
+class ReviewDetailResponse(BaseModel):
+    """Full triage detail for one interaction."""
+
+    interaction: dict
+    feedback: list[dict]
+    evaluation: dict | None = None
+    review: dict | None = None
 
 
 class DocumentCreate(BaseModel):
@@ -557,6 +620,125 @@ async def quality_summary(
     """Aggregated quality metrics for the current knowledge base."""
     summary = summarize_quality(db, context.knowledge_base.id, days=days)
     return QualitySummaryResponse(**summary)
+
+
+@router.get("/qa/reviews", response_model=ReviewListResponse)
+async def list_review_queue(
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_REVIEW)),
+    ],
+    status: str = Query(default="queue", pattern="^(queue|resolved|dismissed)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> ReviewListResponse:
+    """Derived review queue for the current knowledge base."""
+    rows, total = list_reviews(
+        db,
+        context.knowledge_base.id,
+        status_filter=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ReviewListResponse(
+        reviews=[ReviewListItem(**r) for r in rows], total=total
+    )
+
+
+@router.get("/qa/reviews/{interaction_id}", response_model=ReviewDetailResponse)
+async def review_detail(
+    interaction_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_REVIEW)),
+    ],
+) -> ReviewDetailResponse:
+    """Full triage detail for one interaction."""
+    detail = get_review_detail(db, context.knowledge_base.id, interaction_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    return ReviewDetailResponse(**detail)
+
+
+@router.post(
+    "/qa/reviews/{interaction_id}/resolve",
+    response_model=ReviewActionResponse,
+)
+async def resolve_review_endpoint(
+    interaction_id: str,
+    review_req: ReviewResolveRequest,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_REVIEW)),
+    ],
+) -> ReviewActionResponse:
+    """Resolve a queued interaction with a root cause."""
+    review = resolve_review(
+        db,
+        context.knowledge_base.id,
+        interaction_id,
+        root_cause=review_req.root_cause,
+        note=review_req.resolution_note,
+        user_id=context.user.id,
+    )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    AuditService().record(
+        db,
+        action=AuditAction.QA_REVIEW_RESOLVE,
+        resource_type="qa_interaction",
+        resource_id=interaction_id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+    return ReviewActionResponse(
+        interaction_id=interaction_id,
+        status=review.status.value,
+        root_cause=review.root_cause.value if review.root_cause else None,
+    )
+
+
+@router.post(
+    "/qa/reviews/{interaction_id}/dismiss",
+    response_model=ReviewActionResponse,
+)
+async def dismiss_review_endpoint(
+    interaction_id: str,
+    review_req: ReviewDismissRequest,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_REVIEW)),
+    ],
+) -> ReviewActionResponse:
+    """Dismiss a queued interaction as not actionable."""
+    review = dismiss_review(
+        db,
+        context.knowledge_base.id,
+        interaction_id,
+        note=review_req.resolution_note,
+        user_id=context.user.id,
+    )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    AuditService().record(
+        db,
+        action=AuditAction.QA_REVIEW_DISMISS,
+        resource_type="qa_interaction",
+        resource_id=interaction_id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
+    db.commit()
+    return ReviewActionResponse(
+        interaction_id=interaction_id,
+        status=review.status.value,
+        root_cause=None,
+    )
 
 
 # Document Management

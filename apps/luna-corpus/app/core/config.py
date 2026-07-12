@@ -217,6 +217,12 @@ class Settings(BaseSettings):
         le=1.0,
         description="对问答交互触发 LLM 自动评分的采样率（0=从不，1=全部）",
     )
+    quality_review_score_threshold: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="低于该阈值的 LLM 评分（faithfulness/relevance）将该问答纳入待复审队列",
+    )
 
     # Conversation Memory
     conversation_memory_window: int = Field(
