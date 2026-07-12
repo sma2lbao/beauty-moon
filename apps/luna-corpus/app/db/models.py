@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -509,6 +510,101 @@ class AuditLog(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FeedbackRating(str, enum.Enum):
+    """User thumbs rating on an answer."""
+
+    UP = "up"
+    DOWN = "down"
+
+
+class FeedbackErrorType(str, enum.Enum):
+    """Category of problem reported in a DOWN rating."""
+
+    HALLUCINATION = "hallucination"
+    IRRELEVANT = "irrelevant"
+    INCOMPLETE = "incomplete"
+    WRONG_CITATION = "wrong_citation"
+    OTHER = "other"
+
+
+class EvaluationStatus(str, enum.Enum):
+    """Lifecycle of an async LLM evaluation."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class QAInteraction(Base):
+    """Retrievable record of one Q&A exchange — the base for quality signals."""
+
+    __tablename__ = "qa_interactions"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), nullable=False, index=True
+    )
+    conversation_id: Mapped[str | None] = mapped_column(CHAR(36), nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    retrieval_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    processing_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class QAFeedback(Base):
+    """Human feedback on a Q&A interaction."""
+
+    __tablename__ = "qa_feedback"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    interaction_id: Mapped[str] = mapped_column(
+        CHAR(36),
+        ForeignKey("qa_interactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rating: Mapped[FeedbackRating] = mapped_column(
+        Enum(FeedbackRating), nullable=False
+    )
+    error_type: Mapped[FeedbackErrorType | None] = mapped_column(
+        Enum(FeedbackErrorType), nullable=True
+    )
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(CHAR(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class QAEvaluation(Base):
+    """LLM-as-judge scores for a Q&A interaction."""
+
+    __tablename__ = "qa_evaluations"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    interaction_id: Mapped[str] = mapped_column(
+        CHAR(36),
+        ForeignKey("qa_interactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    faithfulness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answer_relevance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    citation_accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judge_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[EvaluationStatus] = mapped_column(
+        Enum(EvaluationStatus), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
