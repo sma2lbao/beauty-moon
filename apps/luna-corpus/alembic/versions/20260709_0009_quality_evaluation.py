@@ -7,6 +7,7 @@ Create Date: 2026-07-09
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.mysql import CHAR
 
 revision = "20260709_0009"
 down_revision = "20260708_0008"
@@ -17,9 +18,9 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "qa_interactions",
-        sa.Column("id", sa.CHAR(36), primary_key=True),
-        sa.Column("knowledge_base_id", sa.CHAR(36), nullable=False),
-        sa.Column("conversation_id", sa.CHAR(36), nullable=True),
+        sa.Column("id", CHAR(36), primary_key=True),
+        sa.Column("knowledge_base_id", CHAR(36), nullable=False),
+        sa.Column("conversation_id", CHAR(36), nullable=True),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("answer", sa.Text(), nullable=False),
         sa.Column("sources", sa.JSON(), nullable=False),
@@ -35,8 +36,8 @@ def upgrade() -> None:
 
     op.create_table(
         "qa_feedback",
-        sa.Column("id", sa.CHAR(36), primary_key=True),
-        sa.Column("interaction_id", sa.CHAR(36), nullable=False),
+        sa.Column("id", CHAR(36), primary_key=True),
+        sa.Column("interaction_id", CHAR(36), nullable=False),
         sa.Column(
             "rating", sa.Enum("up", "down", name="feedbackrating"), nullable=False
         ),
@@ -53,7 +54,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("comment", sa.Text(), nullable=True),
-        sa.Column("created_by_user_id", sa.CHAR(36), nullable=True),
+        sa.Column("created_by_user_id", CHAR(36), nullable=True),
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
         ),
@@ -67,8 +68,8 @@ def upgrade() -> None:
 
     op.create_table(
         "qa_evaluations",
-        sa.Column("id", sa.CHAR(36), primary_key=True),
-        sa.Column("interaction_id", sa.CHAR(36), nullable=False),
+        sa.Column("id", CHAR(36), primary_key=True),
+        sa.Column("interaction_id", CHAR(36), nullable=False),
         sa.Column("faithfulness", sa.Float(), nullable=True),
         sa.Column("answer_relevance", sa.Float(), nullable=True),
         sa.Column("citation_accuracy", sa.Float(), nullable=True),
