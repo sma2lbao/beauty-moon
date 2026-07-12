@@ -11,6 +11,7 @@ from app.metadata.schema import FieldType
 from app.metadata.validation import load_field_definitions
 from app.retrieval.bm25 import invalidate_bm25_cache
 from app.retrieval.filters import to_chroma_metadata
+from app.services.chunk_locator import locate as locate_chunks
 from app.services.llm import embed_texts
 
 
@@ -74,14 +75,23 @@ class DocumentProcessor:
 
         splits = self.text_splitter.split_documents([langchain_doc])
 
+        # 计算每个 split 在原文中的字符偏移与标题层级（fail-safe）
+        locators = locate_chunks(
+            document.content, [s.page_content for s in splits]
+        )
+
         chunks = []
         for i, split in enumerate(splits):
+            loc = locators[i]
             chunks.append({
                 "document_id": document.id,
                 "content": split.page_content,
                 "content_type": self.detect_content_type(split.page_content),
                 "chunk_metadata": doc_metadata or None,
                 "chunk_index": i,
+                "char_start": loc["char_start"],
+                "char_end": loc["char_end"],
+                "heading_path": loc["heading_path"],
             })
 
         return chunks
