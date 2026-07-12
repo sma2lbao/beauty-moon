@@ -47,6 +47,21 @@ INDEX_TASK_DURATION = Histogram(
     ["result"],
 )
 
+QA_INTERACTIONS_TOTAL = Counter(
+    "qa_interactions_total",
+    "Total recorded Q&A interactions",
+)
+QA_FEEDBACK_TOTAL = Counter(
+    "qa_feedback_total",
+    "Total user feedback submissions",
+    ["rating"],
+)
+QA_EVALUATIONS_TOTAL = Counter(
+    "qa_evaluations_total",
+    "Total LLM quality evaluations by terminal status",
+    ["status"],
+)
+
 
 @contextmanager
 def time_stage(histogram, **labels):
