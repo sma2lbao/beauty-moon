@@ -296,6 +296,7 @@ def answer_question(
         "answer": result["answer"],
         "sources": result["sources"],
         "processing_time_ms": processing_time_ms,
+        "retrieval_mode": settings.retrieval_mode.value,
     }
 
 
