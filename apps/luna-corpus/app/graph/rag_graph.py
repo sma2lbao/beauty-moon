@@ -439,6 +439,7 @@ def answer_question_multi_turn(
         "processing_time_ms": processing_time_ms,
         "conversation_id": conversation_id,
         "needs_summarization": result.get("needs_summarization", False),
+        "retrieval_mode": settings.retrieval_mode.value,
     }
 
 
