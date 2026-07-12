@@ -1,4 +1,6 @@
 """chunk_locator 定位计算单元测试。"""
+from unittest.mock import patch
+
 from app.services.chunk_locator import LocatorInfo, locate
 
 
@@ -72,3 +74,74 @@ def test_oversized_heading_truncated_from_end():
     assert path.startswith("…")
     # 末尾层级被保留
     assert path.endswith("标")
+
+
+def test_multilevel_oversized_heading_truncated_from_end():
+    """多级标题超长时，截断后保留最靠近 chunk 的末尾层级。"""
+    long_title = "长" * 1100
+    content = (
+        f"# 顶层\n"
+        f"## 第二层\n"
+        f"### {long_title}\n"
+        "正文在这里。"
+    )
+    splits = ["正文在这里。"]
+
+    result = locate(content, splits)
+
+    path = result[0]["heading_path"]
+    assert path is not None
+    assert len(path) <= 1000
+    assert path.startswith("…")
+    # 最内层标题（###）的标题文本被保留
+    assert path.endswith("长")
+
+
+def test_parse_headings_exception_all_heading_path_none():
+    """_parse_headings 抛异常时，locate() 不抛异常且所有 heading_path 为 None，offset 仍正常。"""
+    content = "# 标题\n\n正文内容。"
+    splits = ["正文内容。"]
+
+    with patch(
+        "app.services.chunk_locator._parse_headings",
+        side_effect=RuntimeError("boom"),
+    ):
+        result = locate(content, splits)
+
+    assert len(result) == 1
+    assert result[0]["heading_path"] is None
+    assert result[0]["char_start"] is not None
+    assert result[0]["char_end"] is not None
+
+
+def test_heading_path_at_exception_single_chunk_degraded():
+    """_heading_path_at 对单个 chunk 抛异常时，仅该 chunk 降级，不影响其他 chunk 与 offset。"""
+    from app.services.chunk_locator import _heading_path_at as original_fn
+
+    content = "# 标题\n\n第一段。\n\n第二段。"
+    splits = ["第一段。", "第二段。"]
+
+    call_count = 0
+
+    def mock_heading_path_at(headings, offset):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("boom")
+        return original_fn(headings, offset)
+
+    with patch(
+        "app.services.chunk_locator._heading_path_at",
+        side_effect=mock_heading_path_at,
+    ):
+        result = locate(content, splits)
+
+    assert len(result) == 2
+    # 第一个 chunk heading 降级为 None
+    assert result[0]["heading_path"] is None
+    assert result[0]["char_start"] is not None
+    assert result[0]["char_end"] is not None
+    # 第二个 chunk 不受牵连
+    assert result[1]["heading_path"] == "标题"
+    assert result[1]["char_start"] is not None
+    assert result[1]["char_end"] is not None

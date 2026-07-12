@@ -84,11 +84,15 @@ def locate(content: str, splits: list[str]) -> list[LocatorInfo]:
             char_end = idx + len(split_text)
             cursor = char_end  # 游标推进，避免重复内容误匹配
 
-        heading_path = (
-            None
-            if heading_disabled or char_start is None
-            else _heading_path_at(headings, char_start)
-        )
+        heading_path: str | None = None
+        if not heading_disabled and char_start is not None:
+            try:
+                heading_path = _heading_path_at(headings, char_start)
+            except Exception:  # noqa: BLE001 — fail-safe，单个 chunk 路径计算失败降级
+                logger.warning(
+                    "chunk heading_path 计算失败，降级为 None", exc_info=True
+                )
+                heading_path = None
         result.append(
             LocatorInfo(
                 char_start=char_start,
