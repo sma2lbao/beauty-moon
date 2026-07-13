@@ -70,3 +70,21 @@ def test_record_interaction_persists_prompt_version_id(db_session):
     assert iid is not None
     row = db_session.query(QAInteraction).filter(QAInteraction.id == iid).first()
     assert row.prompt_version_id == "ver-123"
+
+
+def test_record_interaction_prompt_version_id_defaults_to_none(db_session):
+    """不传 prompt_version_id 时，写入的 QAInteraction.prompt_version_id 应为 None。"""
+    from app.db.models import QAInteraction
+    from app.quality.recorder import record_interaction
+
+    iid = record_interaction(
+        db_session,
+        knowledge_base_id="kb-1",
+        question="q",
+        answer="a",
+        sources=[],
+    )
+    assert iid is not None
+    row = db_session.query(QAInteraction).filter(QAInteraction.id == iid).first()
+    assert row is not None
+    assert row.prompt_version_id is None
