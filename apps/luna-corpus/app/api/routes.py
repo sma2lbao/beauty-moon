@@ -103,6 +103,10 @@ class SourceResponse(BaseModel):
     document_title: str | None = None
     chunk_content: str
     relevance_score: float
+    chunk_index: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    heading_path: str | None = None
 
 
 class AnswerResponse(BaseModel):
@@ -468,6 +472,10 @@ async def query(
                 document_id=source["document_id"],
                 chunk_content=source["chunk_content"],
                 relevance_score=source["relevance_score"],
+                chunk_index=source.get("chunk_index"),
+                char_start=source.get("char_start"),
+                char_end=source.get("char_end"),
+                heading_path=source.get("heading_path"),
             )
         )
 
@@ -1415,6 +1423,10 @@ async def multi_turn_query(
                 document_id=source["document_id"],
                 chunk_content=source["chunk_content"],
                 relevance_score=source["relevance_score"],
+                chunk_index=source.get("chunk_index"),
+                char_start=source.get("char_start"),
+                char_end=source.get("char_end"),
+                heading_path=source.get("heading_path"),
             )
         )
 

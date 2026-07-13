@@ -6,7 +6,7 @@ from langgraph.graph import END, StateGraph
 
 from app.core.config import RetrievalMode, get_settings
 from app.db.database import SessionLocal, get_db
-from app.db.models import Document
+from app.db.models import Chunk, Document
 from app.graph.state import RAGState
 from app.metadata.schema import FieldType
 from app.observability.metrics import (
@@ -30,32 +30,54 @@ def validate_retrieved_docs_for_knowledge_base(
     retrieved_docs: list[dict[str, Any]],
     knowledge_base_id: str,
 ) -> list[dict[str, Any]]:
-    """Keep only retrieved docs whose SQL document belongs to the knowledge base."""
-    document_ids = {
-        doc.get("document_id") for doc in retrieved_docs if doc.get("document_id")
+    """Keep only retrieved docs whose SQL document belongs to the knowledge base.
+
+    同时从 Chunk 行补齐定位字段（chunk_index/char_start/char_end/heading_path），
+    供 sources 透出。存量 chunk 缺失定位时保持 None。
+    """
+    chunk_ids = {
+        doc.get("chunk_id") for doc in retrieved_docs if doc.get("chunk_id")
     }
-    if not document_ids:
+    if not chunk_ids:
         return []
 
     db = next(get_db())
     try:
-        allowed_document_ids = {
-            row[0]
-            for row in db.query(Document.id)
+        rows = (
+            db.query(
+                Chunk.id,
+                Chunk.chunk_index,
+                Chunk.char_start,
+                Chunk.char_end,
+                Chunk.heading_path,
+            )
+            .join(Document, Chunk.document_id == Document.id)
             .filter(
-                Document.id.in_(document_ids),
+                Chunk.id.in_(chunk_ids),
                 Document.knowledge_base_id == knowledge_base_id,
             )
             .all()
-        }
+        )
     finally:
         db.close()
 
-    return [
-        doc
-        for doc in retrieved_docs
-        if doc.get("document_id") in allowed_document_ids
-    ]
+    locator_by_chunk = {
+        row[0]: {
+            "chunk_index": row[1],
+            "char_start": row[2],
+            "char_end": row[3],
+            "heading_path": row[4],
+        }
+        for row in rows
+    }
+
+    validated = []
+    for doc in retrieved_docs:
+        loc = locator_by_chunk.get(doc.get("chunk_id"))
+        if loc is None:
+            continue  # 不属于该 KB，过滤掉
+        validated.append({**doc, **loc})
+    return validated
 
 
 def format_sources(retrieved_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -67,6 +89,10 @@ def format_sources(retrieved_docs: list[dict[str, Any]]) -> list[dict[str, Any]]
             if len(doc["content"]) > 200
             else doc["content"],
             "relevance_score": doc["score"],
+            "chunk_index": doc.get("chunk_index"),
+            "char_start": doc.get("char_start"),
+            "char_end": doc.get("char_end"),
+            "heading_path": doc.get("heading_path"),
         }
         for doc in retrieved_docs
     ]

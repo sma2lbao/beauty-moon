@@ -47,7 +47,7 @@ def test_validate_retrieved_docs_filters_documents_outside_knowledge_base():
     from sqlalchemy.pool import StaticPool
 
     from app.db.database import get_db
-    from app.db.models import Base, Document, KnowledgeBase, Tenant, Workspace
+    from app.db.models import Base, Chunk, Document, KnowledgeBase, Tenant, Workspace
     from app.graph import rag_graph
 
     engine = create_engine(
@@ -64,7 +64,13 @@ def test_validate_retrieved_docs_filters_documents_outside_knowledge_base():
     kb_two = KnowledgeBase(id="kb-2", name="Notes", slug="notes", workspace=workspace)
     doc_one = Document(id="doc-1", title="Allowed", content="A", knowledge_base=kb_one)
     doc_two = Document(id="doc-2", title="Blocked", content="B", knowledge_base=kb_two)
-    session.add_all([doc_one, doc_two])
+    chunk_one = Chunk(
+        id="chunk-1", document_id="doc-1", content="Allowed", chunk_index=0
+    )
+    chunk_two = Chunk(
+        id="chunk-2", document_id="doc-2", content="Blocked", chunk_index=0
+    )
+    session.add_all([doc_one, doc_two, chunk_one, chunk_two])
     session.commit()
     session.close()
 
@@ -100,6 +106,10 @@ def test_validate_retrieved_docs_filters_documents_outside_knowledge_base():
             "document_id": "doc-1",
             "content": "Allowed",
             "score": 0.1,
+            "chunk_index": 0,
+            "char_start": None,
+            "char_end": None,
+            "heading_path": None,
         }
     ]
     engine.dispose()
