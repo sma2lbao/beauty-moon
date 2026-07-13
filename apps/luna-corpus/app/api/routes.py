@@ -497,6 +497,7 @@ async def query(
         sources=result["sources"],
         retrieval_mode=result.get("retrieval_mode"),
         processing_time_ms=result["processing_time_ms"],
+        prompt_version_id=result.get("prompt_version_id"),
     )
 
     if answer_id and should_evaluate():
@@ -1449,6 +1450,7 @@ async def multi_turn_query(
         retrieval_mode=result.get("retrieval_mode"),
         processing_time_ms=result["processing_time_ms"],
         conversation_id=conversation_id,
+        prompt_version_id=result.get("prompt_version_id"),
     )
 
     if answer_id and should_evaluate():

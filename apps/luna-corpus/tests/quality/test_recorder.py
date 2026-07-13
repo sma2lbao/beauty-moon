@@ -53,3 +53,20 @@ def test_should_evaluate_bounds(monkeypatch):
     monkeypatch.setattr(recorder.settings, "quality_eval_sample_rate", 0.5)
     assert should_evaluate(rand=0.4) is True
     assert should_evaluate(rand=0.6) is False
+
+
+def test_record_interaction_persists_prompt_version_id(db_session):
+    from app.db.models import QAInteraction
+    from app.quality.recorder import record_interaction
+
+    iid = record_interaction(
+        db_session,
+        knowledge_base_id="kb-1",
+        question="q",
+        answer="a",
+        sources=[],
+        prompt_version_id="ver-123",
+    )
+    assert iid is not None
+    row = db_session.query(QAInteraction).filter(QAInteraction.id == iid).first()
+    assert row.prompt_version_id == "ver-123"
