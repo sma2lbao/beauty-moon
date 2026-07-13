@@ -163,7 +163,15 @@ def test_answer_question_uses_validated_sources_for_prompt():
     assert "Allowed" in prompt
     assert "Blocked" not in prompt
     assert result["sources"] == [
-        {"document_id": "doc-1", "chunk_content": "Allowed", "relevance_score": 0.1}
+        {
+            "document_id": "doc-1",
+            "chunk_content": "Allowed",
+            "relevance_score": 0.1,
+            "chunk_index": None,
+            "char_start": None,
+            "char_end": None,
+            "heading_path": None,
+        }
     ]
 
 
@@ -239,7 +247,15 @@ async def test_answer_question_stream_uses_validated_sources():
 
     done = [event for event in events if event["event"] == "done"][0]
     assert done["data"]["sources"] == [
-        {"document_id": "doc-1", "chunk_content": "Allowed", "relevance_score": 0.1}
+        {
+            "document_id": "doc-1",
+            "chunk_content": "Allowed",
+            "relevance_score": 0.1,
+            "chunk_index": None,
+            "char_start": None,
+            "char_end": None,
+            "heading_path": None,
+        }
     ]
 
 
@@ -267,7 +283,15 @@ def test_answer_question_multi_turn_uses_validated_sources():
         result = answer_question_multi_turn("Test question", "kb-1")
 
     assert result["sources"] == [
-        {"document_id": "doc-1", "chunk_content": "Allowed", "relevance_score": 0.1}
+        {
+            "document_id": "doc-1",
+            "chunk_content": "Allowed",
+            "relevance_score": 0.1,
+            "chunk_index": None,
+            "char_start": None,
+            "char_end": None,
+            "heading_path": None,
+        }
     ]
 
 
@@ -304,5 +328,13 @@ async def test_answer_question_multi_turn_stream_uses_validated_sources():
 
     done = [event for event in events if event["event"] == "done"][0]
     assert done["data"]["sources"] == [
-        {"document_id": "doc-1", "chunk_content": "Allowed", "relevance_score": 0.1}
+        {
+            "document_id": "doc-1",
+            "chunk_content": "Allowed",
+            "relevance_score": 0.1,
+            "chunk_index": None,
+            "char_start": None,
+            "char_end": None,
+            "heading_path": None,
+        }
     ]
