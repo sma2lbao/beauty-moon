@@ -14,6 +14,8 @@ def test_default_templates_have_zh_and_en():
 def test_default_template_has_body_placeholder():
     tpl = DEFAULT_TEMPLATES[(RAG_QA_PROMPT_KEY, "zh")]["template_text"]
     assert "{body}" in tpl
+    tpl_en = DEFAULT_TEMPLATES[(RAG_QA_PROMPT_KEY, "en")]["template_text"]
+    assert "{body}" in tpl_en
 
 
 def test_render_body_includes_all_sections():
