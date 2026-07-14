@@ -172,6 +172,8 @@ def test_report_excludes_non_completed_evaluations(db_session):
     rep = build_experiment_report(db_session, "kb-p", "rag_qa")
     b = next(v for v in rep["variants"] if v["version_id"] == "B")
     assert b["metrics"]["faithfulness"]["mean"] is None  # no COMPLETED scores
+    # feedback is independent of evaluation status → positive_rate still computed
+    assert b["metrics"]["positive_rate"]["rate"] == 0.8
     faith_cmp = next(
         c for c in rep["comparisons"]
         if c["variant"] == "B" and c["metric"] == "faithfulness"
