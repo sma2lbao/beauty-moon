@@ -51,8 +51,10 @@ from app.graph.rag_graph import (
     answer_question_multi_turn_stream,
     answer_question_stream,
 )
+from app.cost.enforcement import QuotaExceeded, check_quota
+from app.cost.recorder import record_usage
 from app.metadata.validation import load_field_definitions
-from app.observability.metrics import INDEX_TASK_DURATION
+from app.observability.metrics import INDEX_TASK_DURATION, QUOTA_REJECTED_TOTAL
 from app.prompts import registry
 from app.prompts.report import build_experiment_report
 from app.quality.aggregation import summarize_quality
@@ -455,6 +457,16 @@ async def query(
     Returns:
         Answer with sources
     """
+    # 事前配额准入：超限抛 429；系统故障时 check_quota 内部已 fail-open。
+    try:
+        check_quota(db, context.tenant.id, context.workspace.id)
+    except QuotaExceeded as exc:
+        QUOTA_REJECTED_TOTAL.labels(scope_type=exc.scope_type).inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+
     filters_payload = None
     field_types_payload = None
     if question_req.filters and question_req.filters.conditions:
@@ -507,6 +519,16 @@ async def query(
         prompt_version_id=result.get("prompt_version_id"),
     )
 
+    # 记录 token/成本明细并累加日度计数器；record_usage 内部 fail-safe。
+    record_usage(
+        db,
+        tenant_id=context.tenant.id,
+        workspace_id=context.workspace.id,
+        knowledge_base_id=context.knowledge_base.id,
+        interaction_id=answer_id,
+        usage=result.get("usage"),
+    )
+
     if answer_id and should_evaluate():
         eval_id = create_pending_evaluation(db, answer_id)
         if eval_id:
@@ -521,22 +543,42 @@ async def query(
 
 
 async def stream_event_generator(
-    question: str, knowledge_base_id: str
+    question: str,
+    knowledge_base_id: str,
+    db: Session,
+    tenant_id: str,
+    workspace_id: str,
 ) -> AsyncGenerator[str, None]:
     """Generate SSE events for streaming answer.
 
     Args:
         question: User question
         knowledge_base_id: Knowledge base ID for retrieval filtering
+        db: Database session (from request dependency)
+        tenant_id: Tenant ID for usage recording
+        workspace_id: Workspace ID for usage recording
 
     Yields:
         SSE formatted event strings
     """
+    usage_holder: dict = {}
     try:
-        async for event in answer_question_stream(question, knowledge_base_id):
+        async for event in answer_question_stream(
+            question, knowledge_base_id, usage_holder=usage_holder
+        ):
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'event': 'error', 'data': str(e)})}\n\n"
+    finally:
+        # 流末尾记录用量；record_usage 内部 fail-safe，不会打断响应。
+        record_usage(
+            db,
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
+            interaction_id=None,
+            usage=usage_holder.get("usage"),
+        )
 
 
 @router.post("/qa/stream")
@@ -558,6 +600,16 @@ async def stream_query(
     Returns:
         StreamingResponse with SSE events
     """
+    # 事前配额准入：超限抛 429；系统故障时 check_quota 内部已 fail-open。
+    try:
+        check_quota(db, context.tenant.id, context.workspace.id)
+    except QuotaExceeded as exc:
+        QUOTA_REJECTED_TOTAL.labels(scope_type=exc.scope_type).inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+
     AuditService().record(
         db,
         action=AuditAction.QA_QUERY,
@@ -569,7 +621,13 @@ async def stream_query(
     db.commit()
 
     return StreamingResponse(
-        stream_event_generator(question_req.question, context.knowledge_base.id),
+        stream_event_generator(
+            question_req.question,
+            context.knowledge_base.id,
+            db,
+            context.tenant.id,
+            context.workspace.id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
