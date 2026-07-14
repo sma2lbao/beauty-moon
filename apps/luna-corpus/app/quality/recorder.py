@@ -27,6 +27,7 @@ def record_interaction(
     retrieval_mode: str | None = None,
     processing_time_ms: int | None = None,
     conversation_id: str | None = None,
+    prompt_version_id: str | None = None,
 ) -> str | None:
     """Persist one Q&A interaction, returning its id (None on failure)."""
     try:
@@ -38,6 +39,7 @@ def record_interaction(
             sources=sources,
             retrieval_mode=retrieval_mode,
             processing_time_ms=processing_time_ms,
+            prompt_version_id=prompt_version_id,
         )
         db.add(interaction)
         db.flush()

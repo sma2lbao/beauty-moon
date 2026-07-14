@@ -15,6 +15,7 @@ class PermissionSlug:
     QA_QUERY = "qa:query"
     QA_FEEDBACK = "qa:feedback"
     QA_REVIEW = "qa:review"
+    PROMPT_MANAGE = "prompt:manage"
 
 
 class RoleSlug:
@@ -38,6 +39,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         PermissionSlug.QA_QUERY,
         PermissionSlug.QA_FEEDBACK,
         PermissionSlug.QA_REVIEW,
+        PermissionSlug.PROMPT_MANAGE,
     ),
     RoleSlug.KB_EDITOR: (
         PermissionSlug.WORKSPACE_READ,
@@ -51,6 +53,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
         PermissionSlug.QA_QUERY,
         PermissionSlug.QA_FEEDBACK,
         PermissionSlug.QA_REVIEW,
+        PermissionSlug.PROMPT_MANAGE,
     ),
     RoleSlug.KB_READER: (
         PermissionSlug.WORKSPACE_READ,

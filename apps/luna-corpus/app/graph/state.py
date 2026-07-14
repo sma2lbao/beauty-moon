@@ -28,6 +28,7 @@ class RAGState(TypedDict):
     needs_summarization: bool
     filters: dict | None
     field_types: dict | None
+    prompt_version_id: str | None
 
 
 class DocumentProcessingState(TypedDict):
