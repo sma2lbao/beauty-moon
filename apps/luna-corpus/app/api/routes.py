@@ -3,7 +3,7 @@
 import json
 import time
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -1953,27 +1953,27 @@ class PromptVersionCreate(BaseModel):
     version_label: str
     lang: str
     template_text: str
-    status: str = "active"
+    status: Literal["draft", "active", "archived"] = "active"
 
 
 class ExperimentVariantIn(BaseModel):
     """One arm in an A/B experiment configuration."""
 
     version_id: str
-    weight: int
+    weight: int = Field(ge=0)
 
 
 class ExperimentCreate(BaseModel):
     """Request body for creating a running experiment."""
 
     prompt_key: str
-    variants: list[ExperimentVariantIn]
+    variants: list[ExperimentVariantIn] = Field(min_length=1)
 
 
 class ExperimentPatch(BaseModel):
     """Request body for updating an experiment's status or variants."""
 
-    status: str | None = None
+    status: Literal["running", "stopped"] | None = None
     variants: list[ExperimentVariantIn] | None = None
 
 
@@ -1997,6 +1997,15 @@ async def create_prompt_version(
         knowledge_base_id=context.knowledge_base.id,
     )
     db.add(row)
+    db.flush()
+    AuditService().record(
+        db,
+        action=AuditAction.PROMPT_VERSION_CREATE,
+        resource_type="prompt_version",
+        resource_id=row.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
     db.refresh(row)
     return {
@@ -2018,6 +2027,16 @@ async def create_experiment(
     ],
 ) -> dict:
     """Create a running A/B experiment for the current knowledge base."""
+    # A KB may run only one experiment per prompt_key at a time; stop any
+    # existing running experiment so report/select_version stay deterministic.
+    db.query(PromptExperiment).filter(
+        PromptExperiment.knowledge_base_id == context.knowledge_base.id,
+        PromptExperiment.prompt_key == payload.prompt_key,
+        PromptExperiment.status == ExperimentStatus.RUNNING,
+    ).update(
+        {PromptExperiment.status: ExperimentStatus.STOPPED},
+        synchronize_session=False,
+    )
     row = PromptExperiment(
         knowledge_base_id=context.knowledge_base.id,
         prompt_key=payload.prompt_key,
@@ -2025,6 +2044,15 @@ async def create_experiment(
         variants=[v.model_dump() for v in payload.variants],
     )
     db.add(row)
+    db.flush()
+    AuditService().record(
+        db,
+        action=AuditAction.PROMPT_EXPERIMENT_CREATE,
+        resource_type="prompt_experiment",
+        resource_id=row.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
     db.refresh(row)
     registry.invalidate_all()
@@ -2061,6 +2089,15 @@ async def update_experiment(
         row.status = ExperimentStatus(payload.status)
     if payload.variants is not None:
         row.variants = [v.model_dump() for v in payload.variants]
+    db.flush()
+    AuditService().record(
+        db,
+        action=AuditAction.PROMPT_EXPERIMENT_UPDATE,
+        resource_type="prompt_experiment",
+        resource_id=row.id,
+        result=AuditResult.SUCCESS,
+        context=context,
+    )
     db.commit()
     db.refresh(row)
     registry.invalidate_all()

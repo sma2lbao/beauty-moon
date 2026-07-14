@@ -22,6 +22,9 @@ class AuditAction(str, enum.Enum):
     QA_FEEDBACK = "qa.feedback"
     QA_REVIEW_RESOLVE = "qa.review_resolve"
     QA_REVIEW_DISMISS = "qa.review_dismiss"
+    PROMPT_VERSION_CREATE = "prompt.version_create"
+    PROMPT_EXPERIMENT_CREATE = "prompt.experiment_create"
+    PROMPT_EXPERIMENT_UPDATE = "prompt.experiment_update"
 
 
 def _scope(context):
