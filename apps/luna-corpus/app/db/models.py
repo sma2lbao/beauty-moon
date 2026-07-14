@@ -1,17 +1,22 @@
 """SQLAlchemy models for documents and chunks."""
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
+    Numeric,
     String,
     Table,
     Text,
@@ -731,4 +736,90 @@ class PromptExperiment(Base):
 
 # 注册元数据字段定义表到同一 Base.metadata（供建表 / alembic 发现）。
 from app.metadata.models import MetadataFieldDefinition  # noqa: E402,F401
+
+
+class ModelPrice(Base):
+    """provider/model 的单价，按 effective_from 取生效价。"""
+
+    __tablename__ = "model_prices"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_price_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    output_price_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CNY")
+    effective_from: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_model_prices_lookup", "provider", "model", "effective_from"),
+    )
+
+
+class UsageRecord(Base):
+    """每次问答生成的 token/成本明细。"""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    interaction_id: Mapped[str | None] = mapped_column(CHAR(36), nullable=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_amount: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CNY")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
+
+
+class QuotaLimit(Base):
+    """租户/工作区的日度配额阈值。"""
+
+    __tablename__ = "quota_limits"
+    __table_args__ = (UniqueConstraint("scope_type", "scope_id"),)
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    scope_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    scope_id: Mapped[str] = mapped_column(CHAR(36), nullable=False)
+    daily_token_limit: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    daily_cost_limit: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CNY")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class QuotaCounter(Base):
+    """按 (scope, 日期) 分行的日度累加计数器。"""
+
+    __tablename__ = "quota_counters"
+    __table_args__ = (
+        UniqueConstraint("scope_type", "scope_id", "usage_date"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    scope_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    scope_id: Mapped[str] = mapped_column(CHAR(36), nullable=False)
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    token_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cost_used: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
