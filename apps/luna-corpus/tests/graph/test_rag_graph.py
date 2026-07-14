@@ -70,7 +70,8 @@ def test_generate_node():
     )
 
     with patch(
-        "app.graph.rag_graph.generate_response", return_value="Python is great!"
+        "app.graph.rag_graph.generate_response_with_usage",
+        return_value=("Python is great!", None),
     ):
         result = generate_node(state)
 
@@ -118,7 +119,10 @@ def test_generate_node_single_turn_seed_is_per_request():
 
     with (
         patch("app.graph.rag_graph.select_version", side_effect=_capture),
-        patch("app.graph.rag_graph.generate_response", return_value="ok"),
+        patch(
+            "app.graph.rag_graph.generate_response_with_usage",
+            return_value=("ok", None),
+        ),
     ):
         generate_node(_state())
         generate_node(_state())
@@ -165,7 +169,10 @@ def test_generate_node_multi_turn_seed_is_conversation_id():
 
     with (
         patch("app.graph.rag_graph.select_version", side_effect=_capture),
-        patch("app.graph.rag_graph.generate_response", return_value="ok"),
+        patch(
+            "app.graph.rag_graph.generate_response_with_usage",
+            return_value=("ok", None),
+        ),
     ):
         generate_node(state)
 
@@ -193,7 +200,10 @@ def test_answer_question():
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=mock_results,
         ),
-        patch("app.graph.rag_graph.generate_response", return_value="Test answer"),
+        patch(
+            "app.graph.rag_graph.generate_response_with_usage",
+            return_value=("Test answer", None),
+        ),
     ):
         result = answer_question("Test question", "kb-1")
 
@@ -247,7 +257,8 @@ def test_answer_question_uses_validated_sources_for_prompt():
             return_value=validated_results,
         ),
         patch(
-            "app.graph.rag_graph.generate_response", return_value="Answer"
+            "app.graph.rag_graph.generate_response_with_usage",
+            return_value=("Answer", None),
         ) as generate,
     ):
         result = answer_question("Test question", "kb-1")
@@ -322,7 +333,7 @@ async def test_answer_question_stream_uses_validated_sources():
     ]
     validated_results = [raw_results[0]]
 
-    async def fake_streaming_response(prompt, context):
+    async def fake_streaming_response(prompt, context, usage_holder=None):
         yield "Answer"
 
     with (
@@ -371,7 +382,10 @@ def test_answer_question_multi_turn_uses_validated_sources():
             "app.graph.rag_graph.validate_retrieved_docs_for_knowledge_base",
             return_value=raw_results,
         ),
-        patch("app.graph.rag_graph.generate_response", return_value="Answer"),
+        patch(
+            "app.graph.rag_graph.generate_response_with_usage",
+            return_value=("Answer", None),
+        ),
     ):
         result = answer_question_multi_turn("Test question", "kb-1")
 

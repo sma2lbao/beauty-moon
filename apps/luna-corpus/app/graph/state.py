@@ -1,6 +1,6 @@
 """LangGraph state definitions."""
 import operator
-from typing import Annotated
+from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
@@ -29,6 +29,7 @@ class RAGState(TypedDict):
     filters: dict | None
     field_types: dict | None
     prompt_version_id: str | None
+    usage: Any | None
 
 
 class DocumentProcessingState(TypedDict):
