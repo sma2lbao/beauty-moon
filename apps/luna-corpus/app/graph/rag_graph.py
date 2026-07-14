@@ -498,6 +498,7 @@ def answer_question_multi_turn(
         "needs_summarization": result.get("needs_summarization", False),
         "retrieval_mode": settings.retrieval_mode.value,
         "prompt_version_id": result.get("prompt_version_id"),
+        "usage": result.get("usage"),
     }
 
 
@@ -506,6 +507,7 @@ async def answer_question_multi_turn_stream(
     knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
+    usage_holder: dict | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream answer with conversation context.
 
@@ -514,6 +516,7 @@ async def answer_question_multi_turn_stream(
         knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID for context
         include_history: Whether to include conversation history
+        usage_holder: 可选可变字典，流结束时回填 {"usage": TokenUsage|None}
 
     Yields:
         Events: retrieval_status, token, done
@@ -619,7 +622,9 @@ async def answer_question_multi_turn_stream(
     }
 
     full_answer = ""
-    async for token in generate_streaming_response(prompt=full_prompt, context=None):
+    async for token in generate_streaming_response(
+        prompt=full_prompt, context=None, usage_holder=usage_holder
+    ):
         full_answer += token
         yield {"event": "token", "data": token}
 

@@ -301,6 +301,58 @@ def test_records_endpoint_lists_tenant_scoped_rows(client, app_db):
     assert row["cost_amount"] == "0.500000" or Decimal(row["cost_amount"]) == Decimal("0.5")
 
 
+def test_records_endpoint_isolates_other_workspace(client, app_db):
+    """/cost/records 不应返回同租户内其他工作区的用量明细。"""
+    _, Session, context = app_db
+    uid = _make_user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.COST_READ],
+    )
+    session = Session()
+    try:
+        # 同租户、当前工作区：应可见
+        session.add(
+            UsageRecord(
+                tenant_id=context["tenant_id"],
+                workspace_id=context["workspace_id"],
+                knowledge_base_id=context["kb_id"],
+                provider="ollama",
+                model="mine",
+                input_tokens=10,
+                output_tokens=20,
+                total_tokens=30,
+                cost_amount=Decimal("0.5"),
+                currency="CNY",
+            )
+        )
+        # 同租户、其他工作区：不应可见
+        session.add(
+            UsageRecord(
+                tenant_id=context["tenant_id"],
+                workspace_id="11111111-1111-1111-1111-111111111111",
+                knowledge_base_id=context["kb_id"],
+                provider="ollama",
+                model="other-ws",
+                input_tokens=1,
+                output_tokens=1,
+                total_tokens=2,
+                cost_amount=Decimal("0.01"),
+                currency="CNY",
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    got = client.get("/api/v1/cost/records", headers=_headers(context, uid))
+    assert got.status_code == 200
+    body = got.json()
+    assert body["total"] == 1
+    assert len(body["records"]) == 1
+    assert body["records"][0]["model"] == "mine"
+
+
 def test_put_price_creates_row(client, app_db):
     """PUT /cost/prices 应写入一条价格记录。"""
     _, Session, context = app_db

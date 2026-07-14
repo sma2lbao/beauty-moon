@@ -83,11 +83,18 @@ def list_usage_records(
     db: Session,
     *,
     tenant_id: str,
+    workspace_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[UsageRecord], int]:
-    """分页列出本租户的 UsageRecord，返回 (行, 总数)。"""
+    """分页列出用量明细，返回 (行, 总数)。
+
+    始终按 tenant_id 收窄；传入 workspace_id 时进一步收窄到该工作区
+    （工作区级隔离，防止同租户跨工作区读到彼此明细）。
+    """
     q = db.query(UsageRecord).filter(UsageRecord.tenant_id == tenant_id)
+    if workspace_id is not None:
+        q = q.filter(UsageRecord.workspace_id == workspace_id)
     total = q.count()
     rows = (
         q.order_by(UsageRecord.created_at.desc())

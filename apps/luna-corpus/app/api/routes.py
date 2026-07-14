@@ -1447,6 +1447,16 @@ async def multi_turn_query(
     Returns:
         Answer with conversation context
     """
+    # 事前配额准入：超限抛 429；系统故障时 check_quota 内部已 fail-open。
+    try:
+        check_quota(db, context.tenant.id, context.workspace.id)
+    except QuotaExceeded as exc:
+        QUOTA_REJECTED_TOTAL.labels(scope_type=exc.scope_type).inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+
     # Get or create conversation
     if req.conversation_id:
         conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
@@ -1518,6 +1528,16 @@ async def multi_turn_query(
         prompt_version_id=result.get("prompt_version_id"),
     )
 
+    # 记录 token/成本明细并累加日度计数器；record_usage 内部 fail-safe。
+    record_usage(
+        db,
+        tenant_id=context.tenant.id,
+        workspace_id=context.workspace.id,
+        knowledge_base_id=context.knowledge_base.id,
+        interaction_id=answer_id,
+        usage=result.get("usage"),
+    )
+
     if answer_id and should_evaluate():
         eval_id = create_pending_evaluation(db, answer_id)
         if eval_id:
@@ -1583,6 +1603,16 @@ async def stream_multi_turn_query(
     Returns:
         StreamingResponse with SSE events
     """
+    # 事前配额准入：超限抛 429；系统故障时 check_quota 内部已 fail-open。
+    try:
+        check_quota(db, context.tenant.id, context.workspace.id)
+    except QuotaExceeded as exc:
+        QUOTA_REJECTED_TOTAL.labels(scope_type=exc.scope_type).inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+
     # Get or create conversation
     if req.conversation_id:
         conv = get_conversation(db, req.conversation_id, context.knowledge_base.id)
@@ -1603,13 +1633,26 @@ async def stream_multi_turn_query(
 
     # Store conversation_id for the generator to access
     async def generator():
-        async for event in answer_question_multi_turn_stream(
-            question=req.question,
-            knowledge_base_id=context.knowledge_base.id,
-            conversation_id=conversation_id if req.include_history else None,
-            include_history=req.include_history,
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
+        usage_holder: dict = {}
+        try:
+            async for event in answer_question_multi_turn_stream(
+                question=req.question,
+                knowledge_base_id=context.knowledge_base.id,
+                conversation_id=conversation_id if req.include_history else None,
+                include_history=req.include_history,
+                usage_holder=usage_holder,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            # 流末尾记录用量；record_usage 内部 fail-safe，不会打断响应。
+            record_usage(
+                db,
+                tenant_id=context.tenant.id,
+                workspace_id=context.workspace.id,
+                knowledge_base_id=context.knowledge_base.id,
+                interaction_id=None,
+                usage=usage_holder.get("usage"),
+            )
 
     AuditService().record(
         db,

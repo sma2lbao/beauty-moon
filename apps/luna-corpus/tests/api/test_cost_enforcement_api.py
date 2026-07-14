@@ -173,3 +173,79 @@ def test_qa_query_records_usage_on_success(mock_answer, client, app_db):
         assert row.total_tokens == 30
     finally:
         audit_session.close()
+
+
+def test_multi_turn_rejected_when_over_quota(client, app_db):
+    """multi-turn 路由也须受硬限流保护：超限返回 429。"""
+    _, Session, context = app_db
+    _seed_over_tenant_quota(Session, context["tenant_id"])
+    uid = _user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE],
+    )
+    resp = client.post(
+        "/api/v1/qa/multi-turn",
+        headers=_headers(context, uid),
+        json={"question": "hi", "include_history": False},
+    )
+    assert resp.status_code == 429
+    assert "quota exceeded" in resp.json()["detail"]
+
+
+@patch("app.api.routes.answer_question_multi_turn")
+def test_multi_turn_records_usage_on_success(mock_answer, client, app_db):
+    """multi-turn 成功路径：必须落一条 UsageRecord。"""
+    _, Session, context = app_db
+    mock_answer.return_value = {
+        "answer": "A.",
+        "sources": [],
+        "processing_time_ms": 42,
+        "retrieval_mode": "vector",
+        "usage": TokenUsage(
+            input_tokens=11, output_tokens=22, model="test-model", provider="ollama"
+        ),
+    }
+    uid = _user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE],
+    )
+    resp = client.post(
+        "/api/v1/qa/multi-turn",
+        headers=_headers(context, uid),
+        json={"question": "Q?", "include_history": False},
+    )
+    assert resp.status_code == 200
+
+    audit_session = Session()
+    try:
+        row = (
+            audit_session.query(UsageRecord)
+            .filter(UsageRecord.tenant_id == context["tenant_id"])
+            .one()
+        )
+        assert row.workspace_id == context["workspace_id"]
+        assert row.input_tokens == 11
+        assert row.output_tokens == 22
+        assert row.total_tokens == 33
+    finally:
+        audit_session.close()
+
+
+def test_multi_turn_stream_rejected_when_over_quota(client, app_db):
+    """multi-turn 流式路由准入同样在生成前触发 429。"""
+    _, Session, context = app_db
+    _seed_over_tenant_quota(Session, context["tenant_id"])
+    uid = _user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.QA_QUERY, PermissionSlug.CONVERSATION_WRITE],
+    )
+    resp = client.post(
+        "/api/v1/qa/multi-turn/stream",
+        headers=_headers(context, uid),
+        json={"question": "hi", "include_history": False},
+    )
+    assert resp.status_code == 429
+    assert "quota exceeded" in resp.json()["detail"]

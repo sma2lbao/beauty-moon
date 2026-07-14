@@ -133,8 +133,13 @@ async def get_cost_records(
     offset: int = Query(default=0, ge=0),
 ) -> UsageRecordListResponse:
     """分页列出当前租户的 UsageRecord。"""
+    # 工作区级隔离：仅返回当前上下文工作区的用量明细
     rows, total = service.list_usage_records(
-        db, tenant_id=context.tenant.id, limit=limit, offset=offset
+        db,
+        tenant_id=context.tenant.id,
+        workspace_id=context.workspace.id,
+        limit=limit,
+        offset=offset,
     )
     return UsageRecordListResponse(
         records=[UsageRecordResponse.model_validate(r) for r in rows],

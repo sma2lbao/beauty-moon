@@ -415,7 +415,7 @@ async def test_answer_question_multi_turn_stream_uses_validated_sources():
         }
     ]
 
-    async def fake_streaming_response(prompt, context):
+    async def fake_streaming_response(prompt, context, usage_holder=None):
         yield "Answer"
 
     with (
