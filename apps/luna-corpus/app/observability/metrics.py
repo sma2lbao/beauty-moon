@@ -61,6 +61,21 @@ QA_EVALUATIONS_TOTAL = Counter(
     "Total LLM quality evaluations by terminal status",
     ["status"],
 )
+LLM_TOKENS_TOTAL = Counter(
+    "llm_tokens_total",
+    "Total LLM tokens consumed by direction.",
+    ["provider", "model", "direction"],
+)
+LLM_COST_TOTAL = Counter(
+    "llm_cost_total",
+    "Total LLM cost in currency units.",
+    ["provider", "model", "currency"],
+)
+QUOTA_REJECTED_TOTAL = Counter(
+    "quota_rejected_total",
+    "Total requests rejected by quota enforcement.",
+    ["scope_type"],
+)
 
 
 @contextmanager

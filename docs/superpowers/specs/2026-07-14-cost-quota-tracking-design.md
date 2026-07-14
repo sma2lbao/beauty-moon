@@ -21,7 +21,7 @@
 | 时间窗口 | **日度**（UTC 日界，日期分行实现重置） |
 | 故障降级 | **fail-open**：计量/配额组件故障时放行请求 |
 | 价格表 | **数据库表**，含生效时间，可通过 API 管理 |
-| 计量范围 | **仅问答生成**（chat LLM 的 `/qa/query` 与 `/qa/stream`） |
+| 计量范围 | **仅问答生成**（chat LLM 的 `/qa/query`、`/qa/stream`、`/qa/multi-turn`、`/qa/multi-turn/stream`） |
 
 ### 非目标（YAGNI）
 
@@ -35,7 +35,7 @@
 
 - **多租户层级**：`Tenant → Workspace → KnowledgeBase`，经请求头传入，由 `AuthenticatedRequestContext`（`app/api/auth.py`）承载，携带完整 `tenant/workspace/knowledge_base`。
 - **LLM 层**（`app/services/llm.py`）：当前 `generate_response` / `generate_streaming_response` **不返回 token 用量**。Provider 为 Ark（`ChatOpenAI`，OpenAI 兼容，付费）、Ollama（本地，免费）、Doubao（embedding）。
-- **QA 路径**：同步 `answer_question`（`app/graph/rag_graph.py`）与流式 `answer_question_stream`，路由在 `app/api/routes.py` 的 `/qa/query`、`/qa/stream`。
+- **QA 路径**：同步 `answer_question`（`app/graph/rag_graph.py`）与流式 `answer_question_stream`，以及多轮 `answer_question_multi_turn` / `answer_question_multi_turn_stream`；路由在 `app/api/routes.py` 的 `/qa/query`、`/qa/stream`、`/qa/multi-turn`、`/qa/multi-turn/stream`。四条路由共用同一 chat LLM，均纳入计量与硬限流。
 - **旁路记录范式**：`app/quality/recorder.py` 的 `record_interaction` —— 任何异常都 log + rollback + swallow，保证 QA 请求永远成功。本设计复刻该范式。
 - **可观测性**：`app/observability/metrics.py` 已有 Prometheus Counter/Histogram 体系。
 - **RBAC**：`app/auth/permissions.py` 的 `PermissionSlug` + `require_permission` 依赖；角色 `WORKSPACE_ADMIN` / `KB_EDITOR` / `KB_READER`。
@@ -192,7 +192,7 @@ class TokenUsage:
 
 ### 7.1 `enforce_quota` 依赖（`app/cost/enforcement.py`）
 
-FastAPI 依赖，挂在 `/qa/query` 与 `/qa/stream`，执行顺序在 `require_permission(QA_QUERY)` 之后、生成之前：
+FastAPI 依赖，挂在 `/qa/query`、`/qa/stream`、`/qa/multi-turn`、`/qa/multi-turn/stream`，执行顺序在 `require_permission(QA_QUERY)` 之后、生成之前：
 
 1. 读 `quota_limits` 中该 `tenant` 与 `workspace` 的阈值；无配置 = 不限，放行。
 2. 读 `quota_counters` 当天两行的 `token_used` / `cost_used`（按唯一键 O(1) 查）。

@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -10,6 +11,32 @@ from app.core.config import LLMProvider, get_settings
 from app.observability.metrics import EMBEDDING_DURATION, time_stage
 
 settings = get_settings()
+
+
+@dataclass
+class TokenUsage:
+    """一次 LLM 调用的 token 用量。"""
+
+    input_tokens: int
+    output_tokens: int
+    model: str
+    provider: str
+
+
+def extract_usage(response, provider: str, model: str) -> TokenUsage | None:
+    """从 LangChain 响应的 usage_metadata 提取用量；缺失或异常返回 None。"""
+    try:
+        meta = getattr(response, "usage_metadata", None)
+        if not meta:
+            return None
+        return TokenUsage(
+            input_tokens=int(meta.get("input_tokens", 0)),
+            output_tokens=int(meta.get("output_tokens", 0)),
+            model=model,
+            provider=provider,
+        )
+    except Exception:
+        return None
 
 
 class VolcengineEmbeddings:
@@ -106,6 +133,7 @@ def get_chat_model() -> Any:
             api_key=settings.ark_api_key,
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             temperature=0.7,
+            stream_usage=True,
             model_kwargs={"stream": False},
         )
     else:
@@ -163,18 +191,11 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         return embeddings.embed_documents(texts)
 
 
-def generate_response(prompt: str, context: str | None = None) -> str:
-    """Generate response from LLM.
-
-    Args:
-        prompt: User prompt
-        context: Optional context to prepend
-
-    Returns:
-        Generated response
-    """
+def generate_response_with_usage(
+    prompt: str, context: str | None = None
+) -> tuple[str, TokenUsage | None]:
+    """生成响应并返回 (文本, 用量)。用量缺失时为 None。"""
     chat = get_chat_model()
-
     if context:
         full_prompt = f"""Based on the following context, answer the question.
 
@@ -188,21 +209,24 @@ Answer:"""
         full_prompt = prompt
 
     response = chat.invoke(full_prompt)
-    return response.content if hasattr(response, "content") else str(response)
+    text = response.content if hasattr(response, "content") else str(response)
+    usage = extract_usage(
+        response, settings.llm_provider.value, settings.ark_model
+    )
+    return text, usage
 
 
-async def generate_streaming_response(prompt: str, context: str | None = None):
-    """Generate streaming response from LLM.
+def generate_response(prompt: str, context: str | None = None) -> str:
+    """Generate response from LLM."""
+    text, _usage = generate_response_with_usage(prompt, context)
+    return text
 
-    Args:
-        prompt: User prompt
-        context: Optional context to prepend
 
-    Yields:
-        Response chunks as they arrive
-    """
+async def generate_streaming_response(
+    prompt: str, context: str | None = None, usage_holder: dict | None = None
+):
+    """流式生成响应；若传入 usage_holder，流末尾将 TokenUsage 存入其 'usage' 键。"""
     chat = get_chat_model()
-
     if context:
         full_prompt = f"""Based on the following context, answer the question.
 
@@ -215,8 +239,15 @@ Answer:"""
     else:
         full_prompt = prompt
 
+    last_usage = None
     async for chunk in chat.astream(full_prompt):
+        found = extract_usage(chunk, settings.llm_provider.value, settings.ark_model)
+        if found is not None:
+            last_usage = found
         yield chunk.content if hasattr(chunk, "content") else str(chunk)
+
+    if usage_holder is not None:
+        usage_holder["usage"] = last_usage
 
 
 def check_ollama_health() -> bool:

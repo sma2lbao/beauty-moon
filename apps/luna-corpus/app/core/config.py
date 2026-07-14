@@ -224,6 +224,12 @@ class Settings(BaseSettings):
         description="低于该阈值的 LLM 评分（faithfulness/relevance）将该问答纳入待复审队列",
     )
 
+    # Cost & Quota
+    cost_enforcement_enabled: bool = Field(
+        default=True,
+        description="配额硬限流总开关；关闭时 enforce_quota 直接放行",
+    )
+
     # Conversation Memory
     conversation_memory_window: int = Field(
         default=10, description="Number of recent messages to include in context"

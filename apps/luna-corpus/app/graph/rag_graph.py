@@ -16,7 +16,12 @@ from app.observability.metrics import (
 )
 from app.retrieval.filters import MetadataFilter
 from app.retrieval.hybrid import hybrid_search
-from app.services.llm import embed_text, generate_response, generate_streaming_response
+from app.services.llm import (
+    embed_text,
+    generate_response,
+    generate_response_with_usage,
+    generate_streaming_response,
+)
 from app.services.memory import (
     format_conversation_history,
     get_conversation_messages,
@@ -259,12 +264,17 @@ def generate_node(state: RAGState) -> dict[str, Any]:
 
     # Generate response
     with time_stage(LLM_GENERATION_DURATION, provider=settings.llm_provider.value):
-        answer = generate_response(prompt=full_prompt, context=None)
+        answer, usage = generate_response_with_usage(prompt=full_prompt, context=None)
 
     # Format sources
     sources = format_sources(retrieved_docs)
 
-    return {"answer": answer, "sources": sources, "prompt_version_id": prompt_version_id}
+    return {
+        "answer": answer,
+        "sources": sources,
+        "prompt_version_id": prompt_version_id,
+        "usage": usage,
+    }
 
 
 def create_rag_graph() -> StateGraph:
@@ -342,12 +352,14 @@ def answer_question(
         "processing_time_ms": processing_time_ms,
         "retrieval_mode": settings.retrieval_mode.value,
         "prompt_version_id": result.get("prompt_version_id"),
+        "usage": result.get("usage"),
     }
 
 
 async def answer_question_stream(
     question: str,
     knowledge_base_id: str,
+    usage_holder: dict | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream answer to a question using RAG.
 
@@ -428,7 +440,7 @@ async def answer_question_stream(
     }
 
     full_answer = ""
-    async for token in generate_streaming_response(prompt=question, context=context):
+    async for token in generate_streaming_response(prompt=question, context=context, usage_holder=usage_holder):
         full_answer += token
         yield {"event": "token", "data": token}
 
@@ -486,6 +498,7 @@ def answer_question_multi_turn(
         "needs_summarization": result.get("needs_summarization", False),
         "retrieval_mode": settings.retrieval_mode.value,
         "prompt_version_id": result.get("prompt_version_id"),
+        "usage": result.get("usage"),
     }
 
 
@@ -494,6 +507,7 @@ async def answer_question_multi_turn_stream(
     knowledge_base_id: str,
     conversation_id: str | None = None,
     include_history: bool = True,
+    usage_holder: dict | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream answer with conversation context.
 
@@ -502,6 +516,7 @@ async def answer_question_multi_turn_stream(
         knowledge_base_id: Knowledge base ID for retrieval filtering
         conversation_id: Conversation ID for context
         include_history: Whether to include conversation history
+        usage_holder: 可选可变字典，流结束时回填 {"usage": TokenUsage|None}
 
     Yields:
         Events: retrieval_status, token, done
@@ -607,7 +622,9 @@ async def answer_question_multi_turn_stream(
     }
 
     full_answer = ""
-    async for token in generate_streaming_response(prompt=full_prompt, context=None):
+    async for token in generate_streaming_response(
+        prompt=full_prompt, context=None, usage_holder=usage_holder
+    ):
         full_answer += token
         yield {"event": "token", "data": token}
 
