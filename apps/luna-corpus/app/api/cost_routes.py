@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -86,7 +86,17 @@ async def put_quota_limit(
     ],
 ) -> QuotaLimitResponse:
     """按 (scope_type, scope_id) upsert 配额限额。"""
-    _ = context
+    # 租户隔离：scope_id 必须与当前请求上下文对齐，禁止跨租户/跨工作区设配额
+    if req.scope_type == "tenant" and req.scope_id != context.tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot manage quota outside current tenant",
+        )
+    if req.scope_type == "workspace" and req.scope_id != context.workspace.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot manage quota outside current workspace",
+        )
     limit = service.upsert_quota_limit(
         db,
         scope_type=req.scope_type,

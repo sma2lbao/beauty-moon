@@ -356,3 +356,47 @@ def test_quota_limits_requires_cost_manage_permission(client, app_db):
         headers=_headers(context, uid),
     )
     assert resp.status_code == 403
+
+
+def test_quota_limits_rejects_cross_tenant_scope(client, app_db):
+    """即使有 COST_MANAGE，也不能给其他租户设配额（租户隔离）。"""
+    _, Session, context = app_db
+    uid = _make_user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.COST_MANAGE],
+    )
+    resp = client.put(
+        "/api/v1/quota/limits",
+        json={
+            "scope_type": "tenant",
+            "scope_id": "00000000-0000-0000-0000-000000000000",
+            "daily_token_limit": 100,
+            "currency": "CNY",
+        },
+        headers=_headers(context, uid),
+    )
+    assert resp.status_code == 403
+    assert "outside current tenant" in resp.json()["detail"]
+
+
+def test_quota_limits_rejects_cross_workspace_scope(client, app_db):
+    """即使有 COST_MANAGE，也不能给其他工作区设配额（工作区隔离）。"""
+    _, Session, context = app_db
+    uid = _make_user(
+        Session,
+        context["workspace_id"],
+        [PermissionSlug.COST_MANAGE],
+    )
+    resp = client.put(
+        "/api/v1/quota/limits",
+        json={
+            "scope_type": "workspace",
+            "scope_id": "00000000-0000-0000-0000-000000000000",
+            "daily_token_limit": 100,
+            "currency": "CNY",
+        },
+        headers=_headers(context, uid),
+    )
+    assert resp.status_code == 403
+    assert "outside current workspace" in resp.json()["detail"]
