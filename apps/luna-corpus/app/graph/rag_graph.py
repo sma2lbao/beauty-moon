@@ -1,5 +1,6 @@
 """LangGraph RAG flow for question answering."""
 import time
+import uuid
 from typing import Any, AsyncGenerator
 
 from langgraph.graph import END, StateGraph
@@ -21,7 +22,9 @@ from app.services.memory import (
     get_conversation_messages,
     get_memory_context,
 )
-from app.services.prompt_builder import build_rag_prompt
+from app.services.prompt_builder import build_rag_prompt, render_prompt
+from app.prompts.experiment import select_version
+from app.prompts.defaults import RAG_QA_PROMPT_KEY
 
 settings = get_settings()
 
@@ -222,6 +225,7 @@ def generate_node(state: RAGState) -> dict[str, Any]:
         return {
             "answer": "I couldn't find any relevant information to answer your question.",
             "sources": [],
+            "prompt_version_id": None,
         }
 
     # Build context from retrieved docs
@@ -231,13 +235,27 @@ def generate_node(state: RAGState) -> dict[str, Any]:
 
     context = "\n\n".join(context_parts)
 
-    # Build complete prompt with conversation context
-    full_prompt = build_rag_prompt(
+    # Select prompt version (A/B), then render. Fail-safe to file default.
+    knowledge_base_id = state.get("knowledge_base_id")
+    # Split seed: reuse conversation_id for stable per-conversation bucketing;
+    # for single-turn requests fall back to a fresh per-request seed so traffic
+    # is actually split across variants instead of pinning a whole KB to one.
+    seed = conversation_id or uuid.uuid4().hex
+    db = SessionLocal()
+    try:
+        resolved = select_version(
+            db, knowledge_base_id, RAG_QA_PROMPT_KEY, "zh", seed=seed
+        )
+    finally:
+        db.close()
+    full_prompt = render_prompt(
+        resolved.template_text,
         question=question,
         context=context,
         conversation_history=conversation_history,
         conversation_summary=conversation_summary,
     )
+    prompt_version_id = resolved.version_id
 
     # Generate response
     with time_stage(LLM_GENERATION_DURATION, provider=settings.llm_provider.value):
@@ -246,7 +264,7 @@ def generate_node(state: RAGState) -> dict[str, Any]:
     # Format sources
     sources = format_sources(retrieved_docs)
 
-    return {"answer": answer, "sources": sources}
+    return {"answer": answer, "sources": sources, "prompt_version_id": prompt_version_id}
 
 
 def create_rag_graph() -> StateGraph:
@@ -323,6 +341,7 @@ def answer_question(
         "sources": result["sources"],
         "processing_time_ms": processing_time_ms,
         "retrieval_mode": settings.retrieval_mode.value,
+        "prompt_version_id": result.get("prompt_version_id"),
     }
 
 
@@ -466,6 +485,7 @@ def answer_question_multi_turn(
         "conversation_id": conversation_id,
         "needs_summarization": result.get("needs_summarization", False),
         "retrieval_mode": settings.retrieval_mode.value,
+        "prompt_version_id": result.get("prompt_version_id"),
     }
 
 

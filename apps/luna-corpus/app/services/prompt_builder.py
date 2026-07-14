@@ -1,4 +1,23 @@
-"""Prompt builder with conversation memory integration."""
+"""Prompt rendering. Template selection lives in app.prompts.experiment."""
+from app.prompts.defaults import RAG_QA_PROMPT_KEY, render_rag_body
+from app.prompts.registry import get_default_template
+
+
+def render_prompt(
+    template_text: str,
+    question: str,
+    context: str,
+    conversation_history: str = "",
+    conversation_summary: str | None = None,
+) -> str:
+    """Fill a template's {body} placeholder with the assembled sections."""
+    body = render_rag_body(
+        question=question,
+        context=context,
+        conversation_history=conversation_history,
+        conversation_summary=conversation_summary,
+    )
+    return template_text.replace("{body}", body)
 
 
 def build_rag_prompt(
@@ -7,39 +26,11 @@ def build_rag_prompt(
     conversation_history: str = "",
     conversation_summary: str | None = None,
 ) -> str:
-    """Build complete RAG prompt with optional conversation context.
-
-    Args:
-        question: User question
-        context: Retrieved document context
-        conversation_history: Formatted conversation history
-        conversation_summary: Optional summary of prior conversation
-
-    Returns:
-        Complete prompt for LLM
-    """
-    parts = []
-
-    if conversation_summary:
-        parts.append(f"[Prior Conversation Summary]\n{conversation_summary}\n")
-
-    if conversation_history:
-        parts.append(f"[Current Conversation]\n{conversation_history}\n")
-
-    if context:
-        parts.append(f"[Relevant Documents]\n{context}\n")
-
-    parts.append(f"[Current Question]\n{question}")
-
-    body = "\n\n".join(parts)
-
-    prompt = f"""你是一个基于文档的问答助手。请根据提供的上下文信息回答问题。
-
-{body}
-
-请基于上述信息给出回答。如果上下文中没有相关信息，请说明无法从提供的文档中找到答案。"""
-
-    return prompt
+    """Backward-compatible helper: render with the zh file-default template."""
+    tpl = get_default_template(RAG_QA_PROMPT_KEY, "zh")
+    return render_prompt(
+        tpl.template_text, question, context, conversation_history, conversation_summary
+    )
 
 
 def build_rag_prompt_en(
@@ -48,36 +39,8 @@ def build_rag_prompt_en(
     conversation_history: str = "",
     conversation_summary: str | None = None,
 ) -> str:
-    """Build complete RAG prompt with optional conversation context (English).
-
-    Args:
-        question: User question
-        context: Retrieved document context
-        conversation_history: Formatted conversation history
-        conversation_summary: Optional summary of prior conversation
-
-    Returns:
-        Complete prompt for LLM
-    """
-    parts = []
-
-    if conversation_summary:
-        parts.append(f"[Prior Conversation Summary]\n{conversation_summary}\n")
-
-    if conversation_history:
-        parts.append(f"[Current Conversation]\n{conversation_history}\n")
-
-    if context:
-        parts.append(f"[Relevant Documents]\n{context}\n")
-
-    parts.append(f"[Current Question]\n{question}")
-
-    body = "\n\n".join(parts)
-
-    prompt = f"""You are a document-based Q&A assistant. Please answer questions based on the provided context.
-
-{body}
-
-Please provide your answer based on the above information. If the relevant information is not found in the context, please indicate that you cannot find an answer from the provided documents."""
-
-    return prompt
+    """Backward-compatible helper: render with the en file-default template."""
+    tpl = get_default_template(RAG_QA_PROMPT_KEY, "en")
+    return render_prompt(
+        tpl.template_text, question, context, conversation_history, conversation_summary
+    )

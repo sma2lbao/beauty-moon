@@ -558,6 +558,9 @@ class QAInteraction(Base):
     sources: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     retrieval_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     processing_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_version_id: Mapped[str | None] = mapped_column(
+        CHAR(36), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -659,6 +662,71 @@ class QAReview(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class PromptStatus(str, enum.Enum):
+    """Lifecycle of a prompt version."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class PromptSource(str, enum.Enum):
+    """Origin of a prompt version."""
+
+    FILE = "file"
+    DB = "db"
+
+
+class ExperimentStatus(str, enum.Enum):
+    """Lifecycle of a prompt A/B experiment."""
+
+    RUNNING = "running"
+    STOPPED = "stopped"
+
+
+class PromptVersion(Base):
+    """A managed, versioned prompt template asset."""
+
+    __tablename__ = "prompt_versions"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    prompt_key: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    version_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    lang: Mapped[str] = mapped_column(String(10), nullable=False)
+    template_text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[PromptStatus] = mapped_column(
+        Enum(PromptStatus), nullable=False, default=PromptStatus.DRAFT
+    )
+    source: Mapped[PromptSource] = mapped_column(
+        Enum(PromptSource), nullable=False, default=PromptSource.DB
+    )
+    knowledge_base_id: Mapped[str | None] = mapped_column(
+        CHAR(36), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PromptExperiment(Base):
+    """Per-knowledge-base A/B experiment configuration."""
+
+    __tablename__ = "prompt_experiments"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        CHAR(36), nullable=False, index=True
+    )
+    prompt_key: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    status: Mapped[ExperimentStatus] = mapped_column(
+        Enum(ExperimentStatus), nullable=False, default=ExperimentStatus.RUNNING
+    )
+    variants: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 # 注册元数据字段定义表到同一 Base.metadata（供建表 / alembic 发现）。
