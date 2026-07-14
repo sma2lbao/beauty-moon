@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.permissions import PermissionSlug
+from app.auth.tokens import create_access_token
 from app.db.database import get_db
 from app.db.models import (
     Base,
@@ -94,7 +95,7 @@ def create_user_with_permissions(Session, workspace_id, label, permission_slugs)
 
 def _auth_headers(context, knowledge_base_id="kb-1", user_id="user-1"):
     return {
-        "X-User-Id": user_id,
+        "Authorization": f"Bearer {create_access_token(user_id)}",
         "X-Tenant-Id": context["tenant_id"],
         "X-Workspace-Id": context["workspace_id"],
         "X-Knowledge-Base-Id": knowledge_base_id,

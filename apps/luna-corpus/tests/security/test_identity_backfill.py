@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import get_authenticated_context
+from app.auth.tokens import create_access_token
 from app.db.database import Base
 from app.db.models import (
     KnowledgeBase,
@@ -37,7 +38,7 @@ def test_authenticated_context_sets_identity():
 
     get_authenticated_context(
         db=db,
-        x_user_id=user.id,
+        token=create_access_token(user.id),
         x_tenant_id=tenant.id,
         x_workspace_id=workspace.id,
         x_knowledge_base_id=kb.id,

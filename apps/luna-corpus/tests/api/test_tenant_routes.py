@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.permissions import PermissionSlug
+from app.auth.tokens import create_access_token
 from app.db.database import get_db
 from app.db.models import (
     Base,
@@ -87,7 +88,7 @@ def create_knowledge_base_record(client, workspace_id, name, slug):
 
 def context_headers(user_id, tenant_id, workspace_id, knowledge_base_id):
     return {
-        "X-User-Id": user_id,
+        "Authorization": f"Bearer {create_access_token(user_id)}",
         "X-Tenant-Id": tenant_id,
         "X-Workspace-Id": workspace_id,
         "X-Knowledge-Base-Id": knowledge_base_id,
@@ -108,8 +109,8 @@ def test_create_tenant_is_bootstrap_only_but_list_requires_user(client):
 
     response = client.get("/api/v1/tenants")
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Missing required header: X-User-Id"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
 
 
 def test_create_workspace_is_bootstrap_only_but_list_requires_user(client):
@@ -129,8 +130,8 @@ def test_create_workspace_is_bootstrap_only_but_list_requires_user(client):
 
     response = client.get(f"/api/v1/workspaces?tenant_id={tenant['id']}")
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Missing required header: X-User-Id"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
 
 
 def test_tenant_and_workspace_lists_only_return_user_memberships(client):
@@ -155,8 +156,9 @@ def test_tenant_and_workspace_lists_only_return_user_memberships(client):
         [PermissionSlug.WORKSPACE_READ],
     )
 
-    tenants = client.get("/api/v1/tenants", headers={"X-User-Id": user_id})
-    workspaces = client.get("/api/v1/workspaces", headers={"X-User-Id": user_id})
+    auth_header = {"Authorization": f"Bearer {create_access_token(user_id)}"}
+    tenants = client.get("/api/v1/tenants", headers=auth_header)
+    workspaces = client.get("/api/v1/workspaces", headers=auth_header)
 
     assert tenants.status_code == 200
     assert tenants.json()["total"] == 1

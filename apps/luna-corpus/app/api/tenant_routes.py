@@ -7,10 +7,33 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.permissions import PermissionSlug
+from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
 from app.db.models import KnowledgeBase, Tenant, User, Workspace, WorkspaceMembership
 
 router = APIRouter(prefix="/api/v1", tags=["tenants"])
+
+
+def _authenticate_user(db: Session, authorization: str | None) -> User:
+    """Resolve the caller from a bearer token, raising 401/403 on failure."""
+    token = (
+        authorization.removeprefix("Bearer ")
+        if authorization and authorization.startswith("Bearer ")
+        else None
+    )
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    try:
+        user_id = decode_access_token(token)
+    except TokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is inactive")
+    return user
 
 
 class TenantCreate(BaseModel):
@@ -88,16 +111,9 @@ def create_tenant(
 @router.get("/tenants", response_model=TenantListResponse)
 def list_tenants(
     db: Annotated[Session, Depends(get_db)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> TenantListResponse:
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
-
-    user = db.query(User).filter(User.id == x_user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="User is inactive")
+    user = _authenticate_user(db, authorization)
 
     tenants = (
         db.query(Tenant)
@@ -142,16 +158,9 @@ def create_workspace(
 def list_workspaces(
     db: Annotated[Session, Depends(get_db)],
     tenant_id: str | None = Query(default=None),
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> WorkspaceListResponse:
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
-
-    user = db.query(User).filter(User.id == x_user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="User is inactive")
+    user = _authenticate_user(db, authorization)
 
     query = (
         db.query(Workspace)
