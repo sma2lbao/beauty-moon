@@ -31,11 +31,16 @@ from app.db.models import (
     ContentStatus,
     Conversation,
     Document,
+    ExperimentStatus,
     FeedbackErrorType,
     FeedbackRating,
     FileUpload,
     Message,
     MessageRole,
+    PromptExperiment,
+    PromptSource,
+    PromptStatus,
+    PromptVersion,
     ReviewRootCause,
     TaskStatus,
     TaskType,
@@ -48,6 +53,8 @@ from app.graph.rag_graph import (
 )
 from app.metadata.validation import load_field_definitions
 from app.observability.metrics import INDEX_TASK_DURATION
+from app.prompts import registry
+from app.prompts.report import build_experiment_report
 from app.quality.aggregation import summarize_quality
 from app.quality.feedback import create_feedback, get_interaction
 from app.quality.recorder import record_interaction, should_evaluate
@@ -1937,3 +1944,141 @@ async def health_check(db: Annotated[Session, Depends(get_db)]) -> HealthRespons
         overall = "degraded"
 
     return HealthResponse(status=overall, components=components)
+
+
+class PromptVersionCreate(BaseModel):
+    """Request body for creating a DB-sourced prompt version."""
+
+    prompt_key: str
+    version_label: str
+    lang: str
+    template_text: str
+    status: str = "active"
+
+
+class ExperimentVariantIn(BaseModel):
+    """One arm in an A/B experiment configuration."""
+
+    version_id: str
+    weight: int
+
+
+class ExperimentCreate(BaseModel):
+    """Request body for creating a running experiment."""
+
+    prompt_key: str
+    variants: list[ExperimentVariantIn]
+
+
+class ExperimentPatch(BaseModel):
+    """Request body for updating an experiment's status or variants."""
+
+    status: str | None = None
+    variants: list[ExperimentVariantIn] | None = None
+
+
+@router.post("/qa/prompt-versions")
+async def create_prompt_version(
+    payload: PromptVersionCreate,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.PROMPT_MANAGE)),
+    ],
+) -> dict:
+    """Create a DB-sourced prompt version scoped to the current knowledge base."""
+    row = PromptVersion(
+        prompt_key=payload.prompt_key,
+        version_label=payload.version_label,
+        lang=payload.lang,
+        template_text=payload.template_text,
+        status=PromptStatus(payload.status),
+        source=PromptSource.DB,
+        knowledge_base_id=context.knowledge_base.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "prompt_key": row.prompt_key,
+        "version_label": row.version_label,
+        "lang": row.lang,
+        "status": row.status.value,
+    }
+
+
+@router.post("/qa/experiments")
+async def create_experiment(
+    payload: ExperimentCreate,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.PROMPT_MANAGE)),
+    ],
+) -> dict:
+    """Create a running A/B experiment for the current knowledge base."""
+    row = PromptExperiment(
+        knowledge_base_id=context.knowledge_base.id,
+        prompt_key=payload.prompt_key,
+        status=ExperimentStatus.RUNNING,
+        variants=[v.model_dump() for v in payload.variants],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    registry.invalidate_all()
+    return {
+        "id": row.id,
+        "prompt_key": row.prompt_key,
+        "status": row.status.value,
+        "variants": row.variants,
+    }
+
+
+@router.patch("/qa/experiments/{experiment_id}")
+async def update_experiment(
+    experiment_id: str,
+    payload: ExperimentPatch,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.PROMPT_MANAGE)),
+    ],
+) -> dict:
+    """Update an experiment's status and/or variants."""
+    row = (
+        db.query(PromptExperiment)
+        .filter(
+            PromptExperiment.id == experiment_id,
+            PromptExperiment.knowledge_base_id == context.knowledge_base.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    if payload.status is not None:
+        row.status = ExperimentStatus(payload.status)
+    if payload.variants is not None:
+        row.variants = [v.model_dump() for v in payload.variants]
+    db.commit()
+    db.refresh(row)
+    registry.invalidate_all()
+    return {
+        "id": row.id,
+        "status": row.status.value,
+        "variants": row.variants,
+    }
+
+
+@router.get("/qa/experiments/{prompt_key}/report")
+async def experiment_report(
+    prompt_key: str,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.QA_QUERY)),
+    ],
+) -> dict:
+    """Per-version aggregation + significance comparison for a prompt experiment."""
+    return build_experiment_report(db, context.knowledge_base.id, prompt_key)
