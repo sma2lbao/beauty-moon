@@ -241,6 +241,19 @@ class Settings(BaseSettings):
         default=20, description="Message count before triggering summarization"
     )
 
+    # Authentication (JWT)
+    jwt_secret_key: str = Field(
+        default="dev-insecure-secret-change-me",
+        description="Secret key for signing JWT access tokens; must be set in production",
+    )
+    jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
+    access_token_expire_minutes: int = Field(
+        default=15, description="Access token lifetime in minutes"
+    )
+    refresh_token_expire_days: int = Field(
+        default=7, description="Refresh token lifetime in days"
+    )
+
     # Agent
     agent_default_mode: str = Field(
         default="direct", description="Default agent mode"
@@ -314,6 +327,9 @@ class Settings(BaseSettings):
 
         if "*" in self.cors_allow_origins:
             raise ValueError("Production cannot use wildcard CORS origins")
+
+        if not self.jwt_secret_key or self.jwt_secret_key == "dev-insecure-secret-change-me":
+            raise ValueError("JWT_SECRET_KEY must be set to a secure value in production")
 
         return self
 
