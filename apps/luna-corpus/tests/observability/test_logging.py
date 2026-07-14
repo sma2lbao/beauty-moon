@@ -30,7 +30,8 @@ def test_bind_request_context_omits_unset_fields():
 def test_json_logging_emits_json(capsys):
     settings = Settings(app_env=AppEnv.PRODUCTION, log_format=LogFormat.JSON,
                         database_url="sqlite://",
-                        cors_allow_origins=["https://example.com"])
+                        cors_allow_origins=["https://example.com"],
+                        jwt_secret_key="prod-secure-secret")
     configure_logging(settings)
     reset_request_context()
     set_identity_context("user-1", "tenant-1")
@@ -47,7 +48,8 @@ def test_json_logging_emits_json(capsys):
 def test_stdlib_logging_bridged(capsys):
     settings = Settings(app_env=AppEnv.PRODUCTION, log_format=LogFormat.JSON,
                         database_url="sqlite://",
-                        cors_allow_origins=["https://example.com"])
+                        cors_allow_origins=["https://example.com"],
+                        jwt_secret_key="prod-secure-secret")
     configure_logging(settings)
     logging.getLogger("uvicorn.error").warning("bridged message")
     out = capsys.readouterr().out
