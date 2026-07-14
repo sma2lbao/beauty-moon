@@ -1,5 +1,6 @@
 """LangGraph RAG flow for question answering."""
 import time
+import uuid
 from typing import Any, AsyncGenerator
 
 from langgraph.graph import END, StateGraph
@@ -236,7 +237,10 @@ def generate_node(state: RAGState) -> dict[str, Any]:
 
     # Select prompt version (A/B), then render. Fail-safe to file default.
     knowledge_base_id = state.get("knowledge_base_id")
-    seed = conversation_id or knowledge_base_id or "default"
+    # Split seed: reuse conversation_id for stable per-conversation bucketing;
+    # for single-turn requests fall back to a fresh per-request seed so traffic
+    # is actually split across variants instead of pinning a whole KB to one.
+    seed = conversation_id or uuid.uuid4().hex
     db = SessionLocal()
     try:
         resolved = select_version(

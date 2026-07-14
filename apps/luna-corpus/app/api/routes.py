@@ -2029,14 +2029,26 @@ async def create_experiment(
     """Create a running A/B experiment for the current knowledge base."""
     # A KB may run only one experiment per prompt_key at a time; stop any
     # existing running experiment so report/select_version stay deterministic.
-    db.query(PromptExperiment).filter(
-        PromptExperiment.knowledge_base_id == context.knowledge_base.id,
-        PromptExperiment.prompt_key == payload.prompt_key,
-        PromptExperiment.status == ExperimentStatus.RUNNING,
-    ).update(
-        {PromptExperiment.status: ExperimentStatus.STOPPED},
-        synchronize_session=False,
+    superseded = (
+        db.query(PromptExperiment)
+        .filter(
+            PromptExperiment.knowledge_base_id == context.knowledge_base.id,
+            PromptExperiment.prompt_key == payload.prompt_key,
+            PromptExperiment.status == ExperimentStatus.RUNNING,
+        )
+        .all()
     )
+    for old in superseded:
+        old.status = ExperimentStatus.STOPPED
+        AuditService().record(
+            db,
+            action=AuditAction.PROMPT_EXPERIMENT_UPDATE,
+            resource_type="prompt_experiment",
+            resource_id=old.id,
+            result=AuditResult.SUCCESS,
+            context=context,
+            detail="auto-stopped: superseded by a new running experiment",
+        )
     row = PromptExperiment(
         knowledge_base_id=context.knowledge_base.id,
         prompt_key=payload.prompt_key,

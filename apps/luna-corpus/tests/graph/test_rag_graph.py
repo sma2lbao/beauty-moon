@@ -79,6 +79,99 @@ def test_generate_node():
         assert "sources" in result
 
 
+def test_generate_node_single_turn_seed_is_per_request():
+    """Regression for A/B split: single-turn requests (no conversation_id) must
+    NOT reuse the knowledge_base_id as the split seed, otherwise every request
+    in a KB pins to the same variant and the experiment degenerates to 100/0."""
+    from app.graph.rag_graph import generate_node
+    from app.graph.state import RAGState
+    from app.prompts.schemas import ResolvedTemplate
+
+    def _state():
+        return RAGState(
+            question="What is Python?",
+            knowledge_base_id="kb-1",
+            conversation_id=None,
+            conversation_history=[],
+            retrieved_docs=[
+                {
+                    "chunk_id": "chunk-1",
+                    "document_id": "doc-1",
+                    "content": "Python is a programming language.",
+                    "score": 0.95,
+                }
+            ],
+            answer=None,
+            sources=[],
+            processing_time_ms=None,
+            needs_summarization=False,
+        )
+
+    seeds = []
+
+    def _capture(db, kb, key, lang, seed):
+        seeds.append(seed)
+        return ResolvedTemplate(
+            version_id=None, prompt_key=key, lang=lang,
+            version_label="file-default-zh", template_text="{body}",
+        )
+
+    with (
+        patch("app.graph.rag_graph.select_version", side_effect=_capture),
+        patch("app.graph.rag_graph.generate_response", return_value="ok"),
+    ):
+        generate_node(_state())
+        generate_node(_state())
+
+    assert len(seeds) == 2
+    assert seeds[0] != seeds[1]  # fresh per-request seed, not the KB id
+    assert "kb-1" not in seeds  # never degrade to the knowledge_base_id
+
+
+def test_generate_node_multi_turn_seed_is_conversation_id():
+    """With a conversation_id present, the split seed reuses it so a whole
+    conversation stays on one variant (stable, reversible bucketing)."""
+    from app.graph.rag_graph import generate_node
+    from app.graph.state import RAGState
+    from app.prompts.schemas import ResolvedTemplate
+
+    state = RAGState(
+        question="What is Python?",
+        knowledge_base_id="kb-1",
+        conversation_id="conv-42",
+        conversation_history=[],
+        retrieved_docs=[
+            {
+                "chunk_id": "chunk-1",
+                "document_id": "doc-1",
+                "content": "Python is a programming language.",
+                "score": 0.95,
+            }
+        ],
+        answer=None,
+        sources=[],
+        processing_time_ms=None,
+        needs_summarization=False,
+    )
+
+    seeds = []
+
+    def _capture(db, kb, key, lang, seed):
+        seeds.append(seed)
+        return ResolvedTemplate(
+            version_id=None, prompt_key=key, lang=lang,
+            version_label="file-default-zh", template_text="{body}",
+        )
+
+    with (
+        patch("app.graph.rag_graph.select_version", side_effect=_capture),
+        patch("app.graph.rag_graph.generate_response", return_value="ok"),
+    ):
+        generate_node(state)
+
+    assert seeds == ["conv-42"]
+
+
 def test_answer_question():
     """Test full RAG question answering."""
     from app.graph.rag_graph import answer_question

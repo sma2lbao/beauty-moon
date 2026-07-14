@@ -283,6 +283,20 @@ def test_create_experiment_stops_previous_running(client, app_db):
         )
         assert len(running) == 1
         assert running[0].id != first_id  # the old one was stopped
+
+        # the auto-stop must leave an audit trail for the superseded experiment
+        from app.db.models import AuditLog
+
+        stop_audit = (
+            session.query(AuditLog)
+            .filter(
+                AuditLog.action == "prompt.experiment_update",
+                AuditLog.resource_id == first_id,
+            )
+            .first()
+        )
+        assert stop_audit is not None
+        assert "auto-stopped" in (stop_audit.detail or "")
     finally:
         session.close()
 
