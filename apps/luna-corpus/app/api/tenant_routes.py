@@ -2,10 +2,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
+from app.auth.password import hash_password
 from app.auth.permissions import PermissionSlug
 from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
@@ -268,4 +269,43 @@ def list_knowledge_bases(
     return KnowledgeBaseListResponse(
         knowledge_bases=knowledge_bases,
         total=len(knowledge_bases),
+    )
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    display_name: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    display_name: str
+
+
+@router.post(
+    "/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+def create_user(
+    payload: UserCreate,
+    db: Annotated[Session, Depends(get_db)],
+    _ctx: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.WORKSPACE_MANAGE)),
+    ],
+):
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+        )
+    user = User(
+        email=payload.email,
+        display_name=payload.display_name,
+        hashed_password=hash_password(payload.password),
+    )
+    db.add(user)
+    db.commit()
+    return UserResponse(
+        id=user.id, email=user.email, display_name=user.display_name
     )
