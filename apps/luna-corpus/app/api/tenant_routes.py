@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.password import hash_password
-from app.auth.permissions import PermissionSlug
+from app.auth.permissions import DEFAULT_ROLE_PERMISSIONS, PermissionSlug, RoleSlug
 from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
 from app.db.models import (
@@ -276,12 +276,48 @@ class UserCreate(BaseModel):
     email: EmailStr
     display_name: str
     password: str
+    role_slug: str = Field(default=RoleSlug.KB_READER)
 
 
 class UserResponse(BaseModel):
     id: str
     email: str
     display_name: str
+    workspace_id: str
+    role_slug: str
+
+
+_ASSIGNABLE_ROLE_SLUGS: frozenset[str] = frozenset(DEFAULT_ROLE_PERMISSIONS.keys())
+
+
+_ROLE_DISPLAY_NAMES: dict[str, str] = {
+    RoleSlug.WORKSPACE_ADMIN: "Workspace Admin",
+    RoleSlug.KB_EDITOR: "Knowledge Base Editor",
+    RoleSlug.KB_READER: "Knowledge Base Reader",
+}
+
+
+def _ensure_role(db: Session, role_slug: str) -> Role:
+    """Look up a Role by slug, seeding it (and its permissions) if missing."""
+    role = db.query(Role).filter(Role.slug == role_slug).first()
+    if role:
+        return role
+    permissions: list[Permission] = []
+    for slug in DEFAULT_ROLE_PERMISSIONS[role_slug]:
+        perm = db.query(Permission).filter(Permission.slug == slug).first()
+        if not perm:
+            perm = Permission(name=slug, slug=slug, description=slug)
+            db.add(perm)
+        permissions.append(perm)
+    role = Role(
+        name=_ROLE_DISPLAY_NAMES.get(role_slug, role_slug),
+        slug=role_slug,
+        is_system=True,
+        permissions=permissions,
+    )
+    db.add(role)
+    db.flush()
+    return role
 
 
 @router.post(
@@ -295,17 +331,33 @@ def create_user(
         Depends(require_permission(PermissionSlug.WORKSPACE_MANAGE)),
     ],
 ):
+    if payload.role_slug not in _ASSIGNABLE_ROLE_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown role_slug: {payload.role_slug}",
+        )
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
         )
+    role = _ensure_role(db, payload.role_slug)
     user = User(
         email=payload.email,
         display_name=payload.display_name,
         hashed_password=hash_password(payload.password),
     )
-    db.add(user)
+    membership = WorkspaceMembership(
+        user=user,
+        workspace_id=_ctx.workspace.id,
+        roles=[role],
+        is_active=True,
+    )
+    db.add(membership)
     db.commit()
     return UserResponse(
-        id=user.id, email=user.email, display_name=user.display_name
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        workspace_id=_ctx.workspace.id,
+        role_slug=payload.role_slug,
     )
