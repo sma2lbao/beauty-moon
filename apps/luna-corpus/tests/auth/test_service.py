@@ -50,6 +50,25 @@ def test_authenticate_unknown_email(db):
         authenticate(session, "nobody@example.com", "correct-pw")
 
 
+def test_authenticate_unknown_email_runs_dummy_verify(db, monkeypatch):
+    """Unknown email must still call verify_password (constant-time defense)."""
+    import app.auth.service as service
+
+    calls = []
+    real_verify = service.verify_password
+
+    def spy(raw, hashed):
+        calls.append(hashed)
+        return real_verify(raw, hashed)
+
+    monkeypatch.setattr(service, "verify_password", spy)
+    session, _ = db
+    with pytest.raises(AuthError):
+        authenticate(session, "nobody@example.com", "whatever")
+    # verify_password was invoked against the dummy hash, not skipped.
+    assert calls == [service._DUMMY_PASSWORD_HASH]
+
+
 def test_issue_and_rotate(db):
     session, user = db
     pair = issue_token_pair(session, user)

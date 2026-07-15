@@ -126,7 +126,7 @@ def test_created_user_can_access_permitted_endpoint(client, app_db):
     assert resp.status_code == 200
 
 
-def test_create_user_invalid_role_rejected(client, app_db):
+def test_create_user_short_password_rejected(client, app_db):
     _, Session, context = app_db
     admin_id = create_user_with_permissions(
         Session, context["workspace_id"], "admin", [PermissionSlug.WORKSPACE_MANAGE]
@@ -135,11 +135,12 @@ def test_create_user_invalid_role_rejected(client, app_db):
     resp = client.post(
         "/api/v1/users",
         json={
-            "email": "bogus@example.com",
-            "display_name": "Bogus",
-            "password": "pw123456",
-            "role_slug": "bogus",
+            "email": "shortpw@example.com",
+            "display_name": "Short",
+            "password": "short",
+            "role_slug": RoleSlug.KB_READER,
         },
         headers=headers,
     )
-    assert resp.status_code in (400, 422), resp.text
+    assert resp.status_code == 422, resp.text
+

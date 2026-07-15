@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.auth.password import verify_password
+from app.auth.password import hash_password, verify_password
 from app.auth.tokens import (
     create_access_token,
     generate_refresh_token,
@@ -18,6 +18,11 @@ class AuthError(Exception):
     """Raised on failed authentication or invalid refresh token."""
 
 
+# Precomputed hash used to keep authentication timing constant when the email
+# does not exist, preventing user-enumeration via response-time side channel.
+_DUMMY_PASSWORD_HASH = hash_password("dummy-password-never-matches")
+
+
 @dataclass(frozen=True)
 class TokenPair:
     access_token: str
@@ -29,6 +34,9 @@ def authenticate(db: Session, email: str, password: str) -> User:
     """Return the user if email+password match and the account is active."""
     user = db.query(User).filter(User.email == email).first()
     if not user or not user.hashed_password:
+        # Run a verify against a dummy hash so the response time matches the
+        # existing-user path and does not leak whether the email is registered.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
         raise AuthError("Invalid credentials")
     if not verify_password(password, user.hashed_password):
         raise AuthError("Invalid credentials")

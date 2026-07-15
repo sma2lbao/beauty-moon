@@ -275,7 +275,7 @@ def list_knowledge_bases(
 class UserCreate(BaseModel):
     email: EmailStr
     display_name: str
-    password: str
+    password: str = Field(..., min_length=8)
     role_slug: str = Field(default=RoleSlug.KB_READER)
 
 

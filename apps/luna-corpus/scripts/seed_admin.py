@@ -45,6 +45,9 @@ def main() -> None:
     parser.add_argument("--workspace-id", required=True)
     args = parser.parse_args()
 
+    if len(args.password) < 8:
+        raise SystemExit("Password must be at least 8 characters")
+
     session = SessionLocal()
     try:
         if session.query(User).filter(User.email == args.email).first():
