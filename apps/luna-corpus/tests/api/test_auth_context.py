@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import get_authenticated_context
 from app.auth.permissions import PermissionSlug
+from app.auth.tokens import create_access_token
 from app.db.models import (
     Base,
     KnowledgeBase,
@@ -70,8 +71,8 @@ def test_get_authenticated_context_rejects_missing_user_header(db_session):
             [PermissionSlug.DOCUMENT_READ],
         )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Missing required header: X-User-Id"
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Missing bearer token"
 
 
 def test_get_authenticated_context_rejects_unknown_user(db_session):
@@ -80,7 +81,7 @@ def test_get_authenticated_context_rejects_unknown_user(db_session):
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            "missing-user",
+            create_access_token("missing-user"),
             tenant.id,
             workspace.id,
             knowledge_base.id,
@@ -88,7 +89,7 @@ def test_get_authenticated_context_rejects_unknown_user(db_session):
         )
 
     assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "User not found"
+    assert exc_info.value.detail == "Invalid or expired token"
 
 
 def test_get_authenticated_context_rejects_inactive_user(db_session):
@@ -99,7 +100,7 @@ def test_get_authenticated_context_rejects_inactive_user(db_session):
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            user.id,
+            create_access_token(user.id),
             tenant.id,
             workspace.id,
             knowledge_base.id,
@@ -119,7 +120,7 @@ def test_get_authenticated_context_rejects_missing_workspace_membership(db_sessi
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            other_user.id,
+            create_access_token(other_user.id),
             tenant.id,
             workspace.id,
             knowledge_base.id,
@@ -138,7 +139,7 @@ def test_get_authenticated_context_rejects_inactive_membership(db_session):
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            user.id,
+            create_access_token(user.id),
             tenant.id,
             workspace.id,
             knowledge_base.id,
@@ -157,7 +158,7 @@ def test_get_authenticated_context_rejects_missing_permission(db_session):
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            user.id,
+            create_access_token(user.id),
             tenant.id,
             workspace.id,
             knowledge_base.id,
@@ -176,7 +177,7 @@ def test_get_authenticated_context_returns_effective_permissions(db_session):
 
     context = get_authenticated_context(
         db_session,
-        user.id,
+        create_access_token(user.id),
         tenant.id,
         workspace.id,
         knowledge_base.id,
@@ -205,7 +206,7 @@ def test_get_authenticated_context_rejects_cross_workspace_access(db_session):
     with pytest.raises(HTTPException) as exc_info:
         get_authenticated_context(
             db_session,
-            user.id,
+            create_access_token(user.id),
             tenant.id,
             other_workspace.id,
             other_knowledge_base.id,

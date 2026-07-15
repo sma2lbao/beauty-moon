@@ -109,7 +109,7 @@ workspace_membership_roles = Table(
 
 
 class User(Base):
-    """Application identity resolved from temporary request headers."""
+    """Application user authenticated by password login."""
 
     __tablename__ = "users"
 
@@ -119,6 +119,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -127,6 +128,27 @@ class User(Base):
     workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
         "WorkspaceMembership", back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class RefreshToken(Base):
+    """Server-side refresh token record; stores a SHA-256 hash, never plaintext."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (Index("ix_refresh_tokens_user_id", "user_id"),)
 
 
 class Permission(Base):

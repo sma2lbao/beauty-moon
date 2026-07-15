@@ -13,6 +13,8 @@ def test_env_example_documents_runtime_safety_settings():
     assert (
         "CORS_ALLOW_ORIGINS=http://localhost:3000,http://localhost:4200" in env_example
     )
+    assert "JWT_SECRET_KEY=" in env_example
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES=" in env_example
 
 
 def test_readme_documents_migration_commands():
@@ -34,16 +36,17 @@ def test_readme_documents_knowledge_base_context_headers():
     assert "POST /api/v1/knowledge-bases" in readme
 
 
-def test_readme_documents_p0_m3_rbac_context():
+def test_readme_documents_auth_and_rbac_context():
     readme = Path(__file__).parents[1] / "README.md"
     content = readme.read_text()
 
-    assert "X-User-Id" in content
+    # Auth is now bearer-token based; the legacy X-User-Id trust is gone.
+    assert "Authorization: Bearer" in content
+    assert "trust anymore" in content
     assert "workspace_admin" in content
     assert "kb_editor" in content
     assert "kb_reader" in content
-    assert "document:read" in content
-    assert "qa:query" in content
     assert "POST /api/v1/tenants" in content
-    assert "bootstrap" in content.lower()
-    assert "not authentication" in content.lower()
+    assert "POST /api/v1/users" in content
+    assert "/api/v1/auth/login" in content
+    assert "seed_admin.py" in content

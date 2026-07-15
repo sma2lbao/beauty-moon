@@ -2,15 +2,49 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.api.auth import AuthenticatedRequestContext, require_permission
-from app.auth.permissions import PermissionSlug
+from app.auth.password import hash_password
+from app.auth.permissions import DEFAULT_ROLE_PERMISSIONS, PermissionSlug, RoleSlug
+from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
-from app.db.models import KnowledgeBase, Tenant, User, Workspace, WorkspaceMembership
+from app.db.models import (
+    KnowledgeBase,
+    Permission,
+    Role,
+    Tenant,
+    User,
+    Workspace,
+    WorkspaceMembership,
+    role_permissions,
+    workspace_membership_roles,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["tenants"])
+
+
+def _authenticate_user(db: Session, authorization: str | None) -> User:
+    """Resolve the caller from a bearer token, raising 401/403 on failure."""
+    token = (
+        authorization.removeprefix("Bearer ")
+        if authorization and authorization.startswith("Bearer ")
+        else None
+    )
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    try:
+        user_id = decode_access_token(token)
+    except TokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is inactive")
+    return user
 
 
 class TenantCreate(BaseModel):
@@ -77,7 +111,9 @@ class KnowledgeBaseListResponse(BaseModel):
 def create_tenant(
     tenant: TenantCreate,
     db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> TenantResponse:
+    _authenticate_user(db, authorization)
     db_tenant = Tenant(name=tenant.name, slug=tenant.slug)
     db.add(db_tenant)
     db.commit()
@@ -88,16 +124,9 @@ def create_tenant(
 @router.get("/tenants", response_model=TenantListResponse)
 def list_tenants(
     db: Annotated[Session, Depends(get_db)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> TenantListResponse:
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
-
-    user = db.query(User).filter(User.id == x_user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="User is inactive")
+    user = _authenticate_user(db, authorization)
 
     tenants = (
         db.query(Tenant)
@@ -122,10 +151,38 @@ def list_tenants(
 def create_workspace(
     workspace: WorkspaceCreate,
     db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> WorkspaceResponse:
+    user = _authenticate_user(db, authorization)
+
     tenant = db.query(Tenant).filter(Tenant.id == workspace.tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
+
+    has_manage = (
+        db.query(WorkspaceMembership.id)
+        .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
+        .join(
+            workspace_membership_roles,
+            workspace_membership_roles.c.membership_id == WorkspaceMembership.id,
+        )
+        .join(Role, Role.id == workspace_membership_roles.c.role_id)
+        .join(role_permissions, role_permissions.c.role_id == Role.id)
+        .join(Permission, Permission.id == role_permissions.c.permission_id)
+        .filter(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.is_active == True,  # noqa: E712
+            Workspace.tenant_id == workspace.tenant_id,
+            Permission.slug == PermissionSlug.WORKSPACE_MANAGE,
+        )
+        .first()
+        is not None
+    )
+    if not has_manage:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Missing required permission: {PermissionSlug.WORKSPACE_MANAGE}",
+        )
 
     db_workspace = Workspace(
         tenant_id=workspace.tenant_id,
@@ -142,16 +199,9 @@ def create_workspace(
 def list_workspaces(
     db: Annotated[Session, Depends(get_db)],
     tenant_id: str | None = Query(default=None),
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> WorkspaceListResponse:
-    if not x_user_id:
-        raise HTTPException(status_code=400, detail="Missing required header: X-User-Id")
-
-    user = db.query(User).filter(User.id == x_user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="User is inactive")
+    user = _authenticate_user(db, authorization)
 
     query = (
         db.query(Workspace)
@@ -219,4 +269,95 @@ def list_knowledge_bases(
     return KnowledgeBaseListResponse(
         knowledge_bases=knowledge_bases,
         total=len(knowledge_bases),
+    )
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    display_name: str
+    password: str = Field(..., min_length=8)
+    role_slug: str = Field(default=RoleSlug.KB_READER)
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    display_name: str
+    workspace_id: str
+    role_slug: str
+
+
+_ASSIGNABLE_ROLE_SLUGS: frozenset[str] = frozenset(DEFAULT_ROLE_PERMISSIONS.keys())
+
+
+_ROLE_DISPLAY_NAMES: dict[str, str] = {
+    RoleSlug.WORKSPACE_ADMIN: "Workspace Admin",
+    RoleSlug.KB_EDITOR: "Knowledge Base Editor",
+    RoleSlug.KB_READER: "Knowledge Base Reader",
+}
+
+
+def _ensure_role(db: Session, role_slug: str) -> Role:
+    """Look up a Role by slug, seeding it (and its permissions) if missing."""
+    role = db.query(Role).filter(Role.slug == role_slug).first()
+    if role:
+        return role
+    permissions: list[Permission] = []
+    for slug in DEFAULT_ROLE_PERMISSIONS[role_slug]:
+        perm = db.query(Permission).filter(Permission.slug == slug).first()
+        if not perm:
+            perm = Permission(name=slug, slug=slug, description=slug)
+            db.add(perm)
+        permissions.append(perm)
+    role = Role(
+        name=_ROLE_DISPLAY_NAMES.get(role_slug, role_slug),
+        slug=role_slug,
+        is_system=True,
+        permissions=permissions,
+    )
+    db.add(role)
+    db.flush()
+    return role
+
+
+@router.post(
+    "/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+def create_user(
+    payload: UserCreate,
+    db: Annotated[Session, Depends(get_db)],
+    _ctx: Annotated[
+        AuthenticatedRequestContext,
+        Depends(require_permission(PermissionSlug.WORKSPACE_MANAGE)),
+    ],
+):
+    if payload.role_slug not in _ASSIGNABLE_ROLE_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown role_slug: {payload.role_slug}",
+        )
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+        )
+    role = _ensure_role(db, payload.role_slug)
+    user = User(
+        email=payload.email,
+        display_name=payload.display_name,
+        hashed_password=hash_password(payload.password),
+    )
+    membership = WorkspaceMembership(
+        user=user,
+        workspace_id=_ctx.workspace.id,
+        roles=[role],
+        is_active=True,
+    )
+    db.add(membership)
+    db.commit()
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        workspace_id=_ctx.workspace.id,
+        role_slug=payload.role_slug,
     )

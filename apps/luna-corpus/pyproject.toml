@@ -56,6 +56,10 @@ dependencies = [
     # Hybrid retrieval (BM25 keyword search)
     "rank-bm25>=0.2.2",
     "jieba>=0.42.1",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<4.1.0",
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]

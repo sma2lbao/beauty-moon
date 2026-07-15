@@ -7,8 +7,9 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.context import RequestContext, get_request_context
+from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
-from app.db.models import Permission, User, WorkspaceMembership
+from app.db.models import User, WorkspaceMembership
 from app.security.context import set_identity_context
 
 
@@ -21,7 +22,7 @@ class AuthenticatedRequestContext(RequestContext):
 
 def get_authenticated_context(
     db: Session,
-    x_user_id: str | None,
+    token: str | None,
     x_tenant_id: str | None,
     x_workspace_id: str | None,
     x_knowledge_base_id: str | None,
@@ -34,17 +35,24 @@ def get_authenticated_context(
         x_knowledge_base_id=x_knowledge_base_id,
     )
 
-    if not x_user_id:
+    if not token:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required header: X-User-Id",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+        )
+    try:
+        user_id = decode_access_token(token)
+    except TokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
         )
 
-    user = db.query(User).filter(User.id == x_user_id).first()
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="Invalid or expired token",
         )
     if not user.is_active:
         raise HTTPException(
@@ -102,7 +110,7 @@ def require_permission(
 ) -> Callable[..., AuthenticatedRequestContext]:
     def dependency(
         db: Annotated[Session, Depends(get_db)],
-        x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+        authorization: Annotated[str | None, Header()] = None,
         x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
         x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
         x_knowledge_base_id: Annotated[
@@ -112,7 +120,11 @@ def require_permission(
     ) -> AuthenticatedRequestContext:
         return get_authenticated_context(
             db=db,
-            x_user_id=x_user_id,
+            token=(
+                authorization.removeprefix("Bearer ")
+                if authorization and authorization.startswith("Bearer ")
+                else None
+            ),
             x_tenant_id=x_tenant_id,
             x_workspace_id=x_workspace_id,
             x_knowledge_base_id=x_knowledge_base_id,

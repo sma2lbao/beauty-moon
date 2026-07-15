@@ -7,13 +7,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.permissions import PermissionSlug
+from app.auth.tokens import create_access_token
 from app.db.database import get_db
 from app.db.models import (
     Base,
     KnowledgeBase,
     Permission,
     Role,
+    Tenant,
     User,
+    Workspace,
     WorkspaceMembership,
 )
 from app.main import create_app
@@ -67,6 +70,26 @@ def create_user_with_role(client, workspace_id, role_slug, permission_slugs):
         db.close()
 
 
+def bootstrap_tenant_and_workspace(client, tenant_name="Acme", tenant_slug="acme",
+                                    workspace_name="Research", workspace_slug="research"):
+    """Insert a tenant + workspace directly via DB (post-auth routes)."""
+    db_generator = client.app.dependency_overrides[get_db]()
+    db = next(db_generator)
+    try:
+        tenant = Tenant(name=tenant_name, slug=tenant_slug)
+        workspace = Workspace(name=workspace_name, slug=workspace_slug, tenant=tenant)
+        db.add(workspace)
+        db.commit()
+        return {"id": tenant.id, "slug": tenant.slug, "name": tenant.name}, {
+            "id": workspace.id,
+            "tenant_id": workspace.tenant_id,
+            "name": workspace.name,
+            "slug": workspace.slug,
+        }
+    finally:
+        db.close()
+
+
 def create_knowledge_base_record(client, workspace_id, name, slug):
     db_generator = client.app.dependency_overrides[get_db]()
     db = next(db_generator)
@@ -87,67 +110,46 @@ def create_knowledge_base_record(client, workspace_id, name, slug):
 
 def context_headers(user_id, tenant_id, workspace_id, knowledge_base_id):
     return {
-        "X-User-Id": user_id,
+        "Authorization": f"Bearer {create_access_token(user_id)}",
         "X-Tenant-Id": tenant_id,
         "X-Workspace-Id": workspace_id,
         "X-Knowledge-Base-Id": knowledge_base_id,
     }
 
 
-def test_create_tenant_is_bootstrap_only_but_list_requires_user(client):
-    response = client.post(
-        "/api/v1/tenants",
-        json={"name": "Acme", "slug": "acme"},
-    )
-
-    assert response.status_code == 201
-    tenant = response.json()
-    assert tenant["id"]
-    assert tenant["name"] == "Acme"
-    assert tenant["slug"] == "acme"
+def test_list_tenants_requires_authenticated_user(client):
+    bootstrap_tenant_and_workspace(client)
 
     response = client.get("/api/v1/tenants")
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Missing required header: X-User-Id"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
 
 
-def test_create_workspace_is_bootstrap_only_but_list_requires_user(client):
-    tenant = client.post(
-        "/api/v1/tenants",
-        json={"name": "Acme", "slug": "acme"},
-    ).json()
-
-    response = client.post(
-        "/api/v1/workspaces",
-        json={"tenant_id": tenant["id"], "name": "Research", "slug": "research"},
-    )
-
-    assert response.status_code == 201
-    workspace = response.json()
-    assert workspace["tenant_id"] == tenant["id"]
+def test_list_workspaces_requires_authenticated_user(client):
+    tenant, _ = bootstrap_tenant_and_workspace(client)
 
     response = client.get(f"/api/v1/workspaces?tenant_id={tenant['id']}")
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Missing required header: X-User-Id"
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing bearer token"
 
 
 def test_tenant_and_workspace_lists_only_return_user_memberships(client):
-    tenant_one = client.post(
-        "/api/v1/tenants", json={"name": "Acme", "slug": "acme"}
-    ).json()
-    workspace_one = client.post(
-        "/api/v1/workspaces",
-        json={"tenant_id": tenant_one["id"], "name": "Research", "slug": "research"},
-    ).json()
-    tenant_two = client.post(
-        "/api/v1/tenants", json={"name": "Other", "slug": "other"}
-    ).json()
-    client.post(
-        "/api/v1/workspaces",
-        json={"tenant_id": tenant_two["id"], "name": "Private", "slug": "private"},
-    ).json()
+    tenant_one, workspace_one = bootstrap_tenant_and_workspace(
+        client,
+        tenant_name="Acme",
+        tenant_slug="acme",
+        workspace_name="Research",
+        workspace_slug="research",
+    )
+    bootstrap_tenant_and_workspace(
+        client,
+        tenant_name="Other",
+        tenant_slug="other",
+        workspace_name="Private",
+        workspace_slug="private",
+    )
     user_id = create_user_with_role(
         client,
         workspace_one["id"],
@@ -155,8 +157,9 @@ def test_tenant_and_workspace_lists_only_return_user_memberships(client):
         [PermissionSlug.WORKSPACE_READ],
     )
 
-    tenants = client.get("/api/v1/tenants", headers={"X-User-Id": user_id})
-    workspaces = client.get("/api/v1/workspaces", headers={"X-User-Id": user_id})
+    auth_header = {"Authorization": f"Bearer {create_access_token(user_id)}"}
+    tenants = client.get("/api/v1/tenants", headers=auth_header)
+    workspaces = client.get("/api/v1/workspaces", headers=auth_header)
 
     assert tenants.status_code == 200
     assert tenants.json()["total"] == 1
@@ -167,14 +170,7 @@ def test_tenant_and_workspace_lists_only_return_user_memberships(client):
 
 
 def test_create_knowledge_base_requires_manage_permission(client):
-    tenant = client.post(
-        "/api/v1/tenants",
-        json={"name": "Acme", "slug": "acme"},
-    ).json()
-    workspace = client.post(
-        "/api/v1/workspaces",
-        json={"tenant_id": tenant["id"], "name": "Research", "slug": "research"},
-    ).json()
+    tenant, workspace = bootstrap_tenant_and_workspace(client)
     bootstrap_kb = create_knowledge_base_record(
         client,
         workspace["id"],
@@ -204,14 +200,7 @@ def test_create_knowledge_base_requires_manage_permission(client):
 
 
 def test_workspace_admin_can_create_and_list_knowledge_bases(client):
-    tenant = client.post(
-        "/api/v1/tenants",
-        json={"name": "Acme", "slug": "acme"},
-    ).json()
-    workspace = client.post(
-        "/api/v1/workspaces",
-        json={"tenant_id": tenant["id"], "name": "Research", "slug": "research"},
-    ).json()
+    tenant, workspace = bootstrap_tenant_and_workspace(client)
     bootstrap_kb = create_knowledge_base_record(
         client,
         workspace["id"],

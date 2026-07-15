@@ -43,26 +43,75 @@ pnpm nx run luna-corpus:db-revision
 
 Review generated revisions before committing them.
 
-## Tenant and knowledge-base context
+## Authentication
 
-P0-M3 adds workspace-scoped RBAC enforcement to protected corpus routes. Protected routes require the P0-M2 resource context headers plus temporary request identity:
+All protected endpoints require a JWT access token in the `Authorization: Bearer <token>` header. The token identifies the caller; forged or missing tokens return `401`. Resource-scope headers still select the knowledge-base context:
 
 ```http
-X-User-Id: <user-id>
+Authorization: Bearer <access-token>
 X-Tenant-Id: <tenant-id>
 X-Workspace-Id: <workspace-id>
 X-Knowledge-Base-Id: <knowledge-base-id>
 ```
 
-`X-User-Id` is temporary request identity for development and internal calls. It is not authentication and is not a production security credential.
+There is no `X-User-Id` trust anymore — the caller identity is derived from the verified access token only.
+
+Production must set a strong `JWT_SECRET_KEY`; the app refuses to start with an empty or default secret.
+
+### Bootstrap the first admin
+
+There is no public registration. The first admin is created with the seed script, which also binds a `workspace_admin` role:
+
+```bash
+cd apps/luna-corpus
+uv run python scripts/seed_admin.py \
+  --email admin@example.com --password 'change-me' \
+  --display-name Admin --workspace-id <workspace_id>
+```
+
+All subsequent users are created by an admin through `POST /api/v1/users` (requires `workspace:manage`). The new user is bound to the admin's active workspace with the requested `role_slug` (`workspace_admin`, `kb_editor`, or `kb_reader`; defaults to `kb_reader`):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/users \
+  -H 'Authorization: Bearer <admin-access-token>' \
+  -H 'X-Tenant-Id: ...' -H 'X-Workspace-Id: ...' -H 'X-Knowledge-Base-Id: ...' \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"member@example.com","display_name":"Member","password":"pw123456","role_slug":"kb_reader"}'
+```
+
+### Login flow
+
+```bash
+# 1. Login -> access_token + refresh_token
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"change-me"}'
+
+# 2. Call protected endpoints with the access token + resource headers
+curl http://localhost:8000/api/v1/knowledge-bases \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'X-Tenant-Id: ...' -H 'X-Workspace-Id: ...' -H 'X-Knowledge-Base-Id: ...'
+
+# 3. Refresh when the access token expires (rotates the refresh token)
+curl -X POST http://localhost:8000/api/v1/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh_token>"}'
+
+# 4. Logout (revoke the refresh token)
+curl -X POST http://localhost:8000/api/v1/auth/logout \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh_token>"}'
+```
+
+## Tenant and knowledge-base context
+
+Protected corpus routes enforce workspace-scoped RBAC. Beyond the `Authorization` bearer token, they require the resource context headers `X-Tenant-Id`, `X-Workspace-Id`, and `X-Knowledge-Base-Id` to select the active knowledge base.
 
 Seeded roles are stored in the database:
 
-- `workspace_admin`: all workspace, knowledge-base, document, conversation, and QA permissions.
-- `kb_editor`: read knowledge-base metadata, read/write/delete documents, read/write/delete conversations, and query QA.
+- `workspace_admin`: all workspace, knowledge-base, document, conversation, QA, and cost permissions.
+- `kb_editor`: read knowledge-base metadata, read/write/delete documents, read/write/delete conversations, query QA, and read cost.
 - `kb_reader`: read workspace and knowledge-base metadata, read documents, read conversations, and query QA.
-
-Seeded permissions include `workspace:read`, `workspace:manage`, `knowledge_base:read`, `knowledge_base:manage`, `document:read`, `document:write`, `document:delete`, `conversation:read`, `conversation:write`, `conversation:delete`, and `qa:query`.
 
 Create the tenant and workspace hierarchy first:
 
@@ -72,7 +121,7 @@ POST /api/v1/workspaces
 POST /api/v1/knowledge-bases
 ```
 
-`POST /api/v1/tenants` and `POST /api/v1/workspaces` remain bootstrap-only setup endpoints and do not require `X-User-Id`. `GET /api/v1/tenants` and `GET /api/v1/workspaces` are scoped to the active workspaces where the current user has membership.
+`POST /api/v1/tenants` and `POST /api/v1/workspaces` now require a valid bearer token: creating a tenant is open to any authenticated user (platform setup), while creating a workspace additionally requires `workspace:manage` in the target tenant. `GET /api/v1/tenants` and `GET /api/v1/workspaces` are scoped to the workspaces where the caller has active membership.
 
 Requests using a document or conversation from another knowledge base still return `404`. Requests from users without the required workspace membership or permission return `403`.
 

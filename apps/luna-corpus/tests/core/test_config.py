@@ -73,6 +73,7 @@ def test_production_accepts_explicit_cors_origin():
     settings = Settings(
         app_env=AppEnv.PRODUCTION,
         cors_allow_origins="https://app.example.com",
+        jwt_secret_key="prod-secure-secret",
     )
 
     assert settings.cors_allow_origins == ["https://app.example.com"]
@@ -131,7 +132,8 @@ def test_custom_storage_config():
 
 def test_log_format_defaults_to_json_in_production():
     s = Settings(app_env=AppEnv.PRODUCTION, database_url="sqlite://",
-                 cors_allow_origins="https://app.example.com")
+                 cors_allow_origins="https://app.example.com",
+                 jwt_secret_key="prod-secure-secret")
     assert s.log_format == LogFormat.JSON
 
 
@@ -149,7 +151,8 @@ def test_metrics_enabled_defaults_true():
 def test_explicit_log_format_overrides_env_default():
     s = Settings(app_env=AppEnv.PRODUCTION, log_format=LogFormat.CONSOLE,
                  database_url="sqlite://",
-                 cors_allow_origins="https://app.example.com")
+                 cors_allow_origins="https://app.example.com",
+                 jwt_secret_key="prod-secure-secret")
     assert s.log_format == LogFormat.CONSOLE
 
 

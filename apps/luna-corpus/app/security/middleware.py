@@ -5,6 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.auth.tokens import TokenError, decode_access_token
 from app.core.config import get_settings
 from app.security.context import reset_request_context, set_request_context
 from app.security.rate_limiter import RateLimiter
@@ -38,6 +39,17 @@ def _client_ip(request: Request) -> str | None:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _identity_from_bearer(request: Request) -> str | None:
+    """Best-effort decode of the caller's user id from a bearer token."""
+    authorization = request.headers.get("Authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        return decode_access_token(authorization.removeprefix("Bearer "))
+    except TokenError:
+        return None
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -108,7 +120,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "upload": settings.rate_limit_upload_per_minute,
         }.get(category, settings.rate_limit_default_per_minute)
 
-        identity = request.headers.get("X-User-Id") or (
+        identity = _identity_from_bearer(request) or (
             request.client.host if request.client else "anonymous"
         )
         key = f"{identity}:{category}"
