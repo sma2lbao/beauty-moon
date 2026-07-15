@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.context import RequestContext, get_request_context
 from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
-from app.db.models import Permission, User, WorkspaceMembership
+from app.db.models import User, WorkspaceMembership
 from app.security.context import set_identity_context
 
 
