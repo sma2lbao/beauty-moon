@@ -845,3 +845,87 @@ class QuotaCounter(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+
+class AgentRunStatus(str, enum.Enum):
+    """Agent 一次执行的终态。"""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    HALTED_QUOTA = "halted_quota"
+    HALTED_MAX_STEPS = "halted_max_steps"
+    HALTED_TIMEOUT = "halted_timeout"
+
+
+class AgentStepType(str, enum.Enum):
+    """Agent 单步类型。"""
+
+    REASONING = "reasoning"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    FINAL = "final"
+
+
+class AgentRun(Base):
+    """一次 agent 执行 = 一行；run 级聚合用量、成本、状态。"""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(CHAR(36), nullable=False, index=True)
+    conversation_id: Mapped[str | None] = mapped_column(CHAR(36), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    final_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[AgentRunStatus] = mapped_column(
+        Enum(AgentRunStatus), default=AgentRunStatus.RUNNING, nullable=False
+    )
+    steps_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False, default=0)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    steps: Mapped[list["AgentStep"]] = relationship(
+        "AgentStep",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="AgentStep.step_index",
+    )
+
+
+class AgentStep(Base):
+    """一步 = 一行，属于某个 run。"""
+
+    __tablename__ = "agent_steps"
+
+    id: Mapped[str] = mapped_column(
+        CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    run_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_type: Mapped[AgentStepType] = mapped_column(Enum(AgentStepType), nullable=False)
+    thought: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tool_args: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    tool_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    run: Mapped["AgentRun"] = relationship("AgentRun", back_populates="steps")
+
