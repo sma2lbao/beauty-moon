@@ -267,6 +267,12 @@ class Settings(BaseSettings):
     agent_plan_max_steps: int = Field(
         default=10, description="Max steps in a plan"
     )
+    agent_timeout_s: int = Field(
+        default=120, description="Agent 单次执行的墙钟超时（秒）"
+    )
+    agent_max_recursion_depth: int = Field(
+        default=3, description="Agent 工具触发子调用时的最大嵌套深度"
+    )
 
     # Ingestion / File Storage
     storage_backend: str = Field(
