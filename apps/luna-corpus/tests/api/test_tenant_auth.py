@@ -2,6 +2,7 @@
 
 from app.auth.permissions import PermissionSlug
 from app.auth.tokens import create_access_token
+from app.db.models import Tenant
 from tests.api.test_file_upload import (  # noqa: F401
     app_db,
     client,
@@ -82,3 +83,37 @@ def test_create_workspace_allowed_with_manage_permission(client, app_db):
     body = response.json()
     assert body["tenant_id"] == context["tenant_id"]
     assert body["slug"] == "second-ws"
+
+
+def test_create_workspace_cross_tenant_forbidden(client, app_db):
+    """User with WORKSPACE_MANAGE in tenant A cannot create workspace in tenant B → 403."""
+    _, Session, context = app_db
+
+    # Build a second tenant B in which the user has no membership at all.
+    session = Session()
+    try:
+        tenant_b = Tenant(name="Bravo", slug="bravo")
+        session.add(tenant_b)
+        session.commit()
+        tenant_b_id = tenant_b.id
+    finally:
+        session.close()
+
+    user_id = create_user_with_permissions(
+        Session,
+        context["workspace_id"],
+        "cross-tenant-admin",
+        [PermissionSlug.WORKSPACE_MANAGE],
+    )
+    headers = {"Authorization": f"Bearer {create_access_token(user_id)}"}
+    response = client.post(
+        "/api/v1/workspaces",
+        json={
+            "tenant_id": tenant_b_id,
+            "name": "CrossTenant",
+            "slug": "cross-tenant-ws",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 403
+    assert "workspace:manage" in response.json()["detail"]
