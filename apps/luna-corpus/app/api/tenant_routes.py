@@ -9,7 +9,17 @@ from app.api.auth import AuthenticatedRequestContext, require_permission
 from app.auth.permissions import PermissionSlug
 from app.auth.tokens import TokenError, decode_access_token
 from app.db.database import get_db
-from app.db.models import KnowledgeBase, Tenant, User, Workspace, WorkspaceMembership
+from app.db.models import (
+    KnowledgeBase,
+    Permission,
+    Role,
+    Tenant,
+    User,
+    Workspace,
+    WorkspaceMembership,
+    role_permissions,
+    workspace_membership_roles,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["tenants"])
 
@@ -100,7 +110,9 @@ class KnowledgeBaseListResponse(BaseModel):
 def create_tenant(
     tenant: TenantCreate,
     db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> TenantResponse:
+    _authenticate_user(db, authorization)
     db_tenant = Tenant(name=tenant.name, slug=tenant.slug)
     db.add(db_tenant)
     db.commit()
@@ -138,10 +150,38 @@ def list_tenants(
 def create_workspace(
     workspace: WorkspaceCreate,
     db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> WorkspaceResponse:
+    user = _authenticate_user(db, authorization)
+
     tenant = db.query(Tenant).filter(Tenant.id == workspace.tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
+
+    has_manage = (
+        db.query(WorkspaceMembership.id)
+        .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
+        .join(
+            workspace_membership_roles,
+            workspace_membership_roles.c.membership_id == WorkspaceMembership.id,
+        )
+        .join(Role, Role.id == workspace_membership_roles.c.role_id)
+        .join(role_permissions, role_permissions.c.role_id == Role.id)
+        .join(Permission, Permission.id == role_permissions.c.permission_id)
+        .filter(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.is_active == True,  # noqa: E712
+            Workspace.tenant_id == workspace.tenant_id,
+            Permission.slug == PermissionSlug.WORKSPACE_MANAGE,
+        )
+        .first()
+        is not None
+    )
+    if not has_manage:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Missing required permission: {PermissionSlug.WORKSPACE_MANAGE}",
+        )
 
     db_workspace = Workspace(
         tenant_id=workspace.tenant_id,
