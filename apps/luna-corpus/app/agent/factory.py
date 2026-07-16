@@ -27,21 +27,25 @@ class AgentFactory:
         mode: AgentMode,
         tools: ToolRegistry | list[Tool] | None = None,
         max_steps: int = 10,
+        timeout_s: int = 120,
+        max_recursion_depth: int = 3,
         name: str = "agent",
     ) -> Agent:
-        """Create an agent instance.
+        """创建 agent 实例。
 
         Args:
-            mode: Agent execution mode
-            tools: Tools to register (ToolRegistry or list of Tools)
-            max_steps: Maximum execution steps
-            name: Agent name
+            mode: agent 执行模式
+            tools: 工具（ToolRegistry 或 Tool 列表）
+            max_steps: LLM 循环最大步数
+            timeout_s: 单次运行超时（秒），供治理层
+            max_recursion_depth: 最大递归深度，供治理层
+            name: agent 名称
 
         Returns:
-            Agent instance
+            Agent 实例
 
         Raises:
-            ValueError: If mode is unknown
+            ValueError: mode 未知
         """
         if tools is None:
             registry = ToolRegistry()
@@ -52,7 +56,13 @@ class AgentFactory:
             for t in tools:
                 registry.register(t)
 
-        config = AgentConfig(name=name, max_steps=max_steps, tools=registry)
+        config = AgentConfig(
+            name=name,
+            max_steps=max_steps,
+            timeout_s=timeout_s,
+            max_recursion_depth=max_recursion_depth,
+            tools=registry,
+        )
 
         modes = {
             AgentMode.DIRECT: DirectAgent,
