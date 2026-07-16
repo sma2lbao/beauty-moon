@@ -25,6 +25,8 @@ class AuditAction(str, enum.Enum):
     PROMPT_VERSION_CREATE = "prompt.version_create"
     PROMPT_EXPERIMENT_CREATE = "prompt.experiment_create"
     PROMPT_EXPERIMENT_UPDATE = "prompt.experiment_update"
+    # Agent 模式下的一次问答调用（区别于旧 QA_QUERY，用于 agent 化路由的审计）
+    AGENT_QUERY = "agent.query"
 
 
 def _scope(context):
