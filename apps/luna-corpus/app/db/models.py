@@ -883,7 +883,9 @@ class AgentRun(Base):
     query: Mapped[str] = mapped_column(Text, nullable=False)
     final_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[AgentRunStatus] = mapped_column(
-        Enum(AgentRunStatus), default=AgentRunStatus.RUNNING, nullable=False
+        Enum(AgentRunStatus, native_enum=False, length=20),
+        default=AgentRunStatus.RUNNING,
+        nullable=False,
     )
     steps_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -916,7 +918,9 @@ class AgentStep(Base):
         CHAR(36), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     step_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    step_type: Mapped[AgentStepType] = mapped_column(Enum(AgentStepType), nullable=False)
+    step_type: Mapped[AgentStepType] = mapped_column(
+        Enum(AgentStepType, native_enum=False, length=20), nullable=False
+    )
     thought: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tool_args: Mapped[dict | None] = mapped_column(JSON, nullable=True)

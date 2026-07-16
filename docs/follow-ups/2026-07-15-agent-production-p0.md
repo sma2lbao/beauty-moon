@@ -26,4 +26,4 @@
 9. **agent_runs / agent_steps 生命周期**：目前无 TTL / 归档策略，`agent_steps` 的 `input_snapshot` / `output_snapshot` 为完整 JSON，长期会膨胀。建议规划：
    - 短期：加索引 `(workspace_id, created_at)` 以支持时间窗查询与批量删除；
    - 中期：按 `retention_days`（新增配置）定期归档到冷存储或直接清理。
-10. **audit_logs ↔ agent_runs 关联**：Task 10 落地 `audit_logs` 已带 `run_id` 字段，但目前尚无 join 视图 / 端点让运营从一次 run 直接跳到相关审计条目（`GET /agent-runs/{id}/audit`）。放到 P1 复审工单流的下一次迭代一起做，可复用现有 `QA_REVIEW` 权限。
+10. **audit_logs ↔ agent_runs 关联**：已在 P0 收尾修复中把 `audit_logs.resource_type='agent_run'` 且 `resource_id=agent_run.id`（成本/模式落 detail JSON），运营可用 `resource_id=run.id` 直接反查审计条目。仍待建的：`GET /agent-runs/{id}/audit` join 视图（复用 `QA_REVIEW` 权限），放到 P1 复审工单流下一次迭代。
