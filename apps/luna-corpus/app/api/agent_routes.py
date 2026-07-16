@@ -1,8 +1,9 @@
-"""Agent API 路由：完整生产管线（配额准入 + 治理 + 轨迹 + 审计 + 会话记忆 + 成本计量）。"""
+"""Agent API 路由：完整生产管线（配额准入 + 治理 + 轨迹 + 审计 + 会话记忆 + 成本计量）。"""  # noqa: E501
 import json
 import time
 import uuid
-from typing import Annotated, Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -49,7 +50,9 @@ class AgentQueryRequest(BaseModel):
     """Agent 查询请求。"""
 
     query: str = Field(..., min_length=1, max_length=2000)
-    mode: str = Field(default="direct", description="Agent 模式：direct/react/plan/langgraph")
+    mode: str = Field(
+        default="direct", description="Agent 模式：direct/react/plan/langgraph"
+    )
     available_tools: list[str] | None = Field(
         default=None, description="仅暴露给 agent 的工具白名单；缺省=使用默认工具"
     )
@@ -142,7 +145,9 @@ def _parse_mode(mode_str: str) -> AgentMode:
     try:
         return AgentMode(mode_str.lower())
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid mode: {mode_str}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mode: {mode_str}"
+        ) from exc
 
 
 def _load_memory_history(db: Session, conversation_id: str | None) -> str:
@@ -305,7 +310,9 @@ async def _run_pipeline(
         try:
             db.commit()
         except Exception:  # noqa: BLE001 - 审计/轨迹尽力而为
-            try:
+            # 刻意保留 try/except/pass：rollback 本身失败也必须吞掉，
+            # 避免掩盖上层 HaltSignal。
+            try:  # noqa: SIM105
                 db.rollback()
             except Exception:
                 pass
@@ -331,7 +338,8 @@ async def _run_pipeline(
         try:
             db.commit()
         except Exception:  # noqa: BLE001
-            try:
+            # 刻意保留 try/except/pass：rollback 本身失败也必须吞掉，保证原异常能上抛。
+            try:  # noqa: SIM105
                 db.rollback()
             except Exception:
                 pass
@@ -421,7 +429,10 @@ async def _agent_sse_generator(
         yield "data: " + json.dumps(
             {
                 "event": "error",
-                "data": {"status_code": http_exc.status_code, "detail": http_exc.detail},
+                "data": {
+                    "status_code": http_exc.status_code,
+                    "detail": http_exc.detail,
+                },
             }
         ) + "\n\n"
     except Exception as exc:  # noqa: BLE001
@@ -513,7 +524,10 @@ async def list_modes(
         "modes": [
             {"mode": "direct", "description": "Direct execution - single LLM call"},
             {"mode": "react", "description": "ReAct loop - reasoning and acting"},
-            {"mode": "plan", "description": "Plan-then-Execute - plan first, execute second"},
+            {
+                "mode": "plan",
+                "description": "Plan-then-Execute - plan first, execute second",
+            },
             {"mode": "langgraph", "description": "State machine workflow"},
         ]
     }
