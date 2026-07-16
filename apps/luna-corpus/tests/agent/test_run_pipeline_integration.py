@@ -34,6 +34,9 @@ class FakeChat:
     def invoke(self, messages):
         return self._script.pop(0)
 
+    async def ainvoke(self, messages):
+        return self.invoke(messages)
+
 
 def _ctx(db_ok_mode="react", max_steps=5, timeout_s=120):
     """构造一个默认的 AgentRunContext。"""

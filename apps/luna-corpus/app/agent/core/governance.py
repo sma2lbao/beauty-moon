@@ -18,8 +18,14 @@ class HaltSignal(Exception):
 def check_step(db: Session | None, ctx: AgentRunContext, step_index: int) -> None:
     """每步开始前调用；任一检查不过即抛 HaltSignal。
 
-    顺序：步数上限 → 墙钟超时 → 配额（配额服务异常时 check_quota 内部 fail-open）。
+    顺序：递归深度 → 步数上限 → 墙钟超时 → 配额
+    （配额服务异常时 check_quota 内部 fail-open）。
     """
+    if ctx.recursion_depth > ctx.max_recursion_depth:
+        raise HaltSignal(
+            AgentRunStatus.HALTED_MAX_STEPS, "recursion depth exceeded"
+        )
+
     if step_index >= ctx.max_steps:
         raise HaltSignal(AgentRunStatus.HALTED_MAX_STEPS, "max steps reached")
 

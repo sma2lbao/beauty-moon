@@ -32,6 +32,10 @@ class FakeChat:
     def invoke(self, messages):
         return self._script.pop(0)
 
+    async def ainvoke(self, messages):
+        # llm_loop 已全面 async 化；同步 invoke 只保留给测试内部复用。
+        return self.invoke(messages)
+
 
 class NoopTrace:
     """占位 TraceRecorder，忽略所有轨迹调用。"""
@@ -108,7 +112,7 @@ async def test_executes_tool_then_answers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_halts_on_max_steps(monkeypatch):
-    """LLM 一直要求调工具，撞上 max_steps 后强制收敛为 HALTED_MAX_STEPS。"""
+    """LLM 一直要求调工具，撞上 max_steps 后按 spec §4.1 强制不带 tools 收敛一次 final answer。"""
     import app.agent.core.llm_loop as loop_mod
     monkeypatch.setattr(loop_mod, "check_step", lambda *a, **k: None)
 
@@ -119,9 +123,10 @@ async def test_halts_on_max_steps(monkeypatch):
     reg = ToolRegistry()
     reg.register(echo)
 
+    # max_steps=2 → 2 次要求调工具的响应 + 1 次兜底 final answer。
     script = [
-        FakeMsg(tool_calls=[{"name": "echo", "args": {"value": "a"}, "id": "c"}])
-        for _ in range(10)
+        FakeMsg(tool_calls=[{"name": "echo", "args": {"value": "a"}, "id": f"c{i}"}])
+        for i in range(2)
     ]
     script.append(FakeMsg(content="兜底答案"))
     chat = FakeChat(script)
@@ -130,6 +135,7 @@ async def test_halts_on_max_steps(monkeypatch):
         system_prompt="sys", user_query="q", provider="ark", model="m",
     )
     assert res.status == AgentRunStatus.HALTED_MAX_STEPS
+    assert res.answer == "兜底答案"
 
 
 @pytest.mark.asyncio

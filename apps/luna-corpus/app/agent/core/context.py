@@ -23,6 +23,10 @@ class AgentRunContext:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     steps_count: int = 0
+    # 递归深度：P0 阶段不启用子 agent / agent-of-agents，字段保留为哨兵位，
+    # 由 governance.check_step 在 recursion_depth > max_recursion_depth 时熔断。
+    # 后续开放子 agent 编排时，父 agent 派生子 run 时应显式 +1。
+    recursion_depth: int = 0
 
     def elapsed_s(self) -> float:
         """从 start_time 起的墙钟耗时（秒）。"""

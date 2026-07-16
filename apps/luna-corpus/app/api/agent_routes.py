@@ -1,5 +1,6 @@
 """Agent API 路由：完整生产管线（配额准入 + 治理 + 轨迹 + 审计 + 会话记忆 + 成本计量）。"""  # noqa: E501
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -23,7 +24,7 @@ from app.core.config import AgentMode, get_settings
 from app.cost.enforcement import QuotaExceeded, check_quota
 from app.cost.recorder import record_usage
 from app.db.database import get_db
-from app.db.models import AgentRunStatus, AuditResult, MessageRole
+from app.db.models import AgentRunStatus, AuditResult, Conversation, MessageRole
 from app.observability.metrics import QUOTA_REJECTED_TOTAL
 from app.security.audit import AuditAction, AuditService
 from app.services.llm import TokenUsage
@@ -33,6 +34,8 @@ from app.services.memory import (
     get_conversation_messages,
     get_memory_context,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -150,9 +153,47 @@ def _parse_mode(mode_str: str) -> AgentMode:
         ) from exc
 
 
-def _load_memory_history(db: Session, conversation_id: str | None) -> str:
-    """载入会话历史（含 summary + 最近消息）；无会话 ID 返回空串。"""
+def _conversation_belongs_to_kb(
+    db: Session, conversation_id: str, knowledge_base_id: str
+) -> bool:
+    """校验 conversation 是否属于当前知识库。
+
+    P0 阶段 Conversation 的租户/工作区归属通过 knowledge_base FK 隐式绑定
+    （KnowledgeBase → Workspace → Tenant），因此 KB 归属校验足以防跨租户串扰。
+    """
+    return (
+        db.query(Conversation.id)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.knowledge_base_id == knowledge_base_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _load_memory_history(
+    db: Session,
+    conversation_id: str | None,
+    knowledge_base_id: str | None = None,
+) -> str:
+    """载入会话历史（含 summary + 最近消息）；无会话 ID 或跨 KB 越权则返回空串。
+
+    关键：拿到 conversation_id 后必须先按 knowledge_base_id 校验归属，
+    否则攻击者传入其它 KB 的 conversation_id 即可窃取或注入他人历史。
+    """
     if not conversation_id:
+        return ""
+    if knowledge_base_id and not _conversation_belongs_to_kb(
+        db, conversation_id, knowledge_base_id
+    ):
+        logger.warning(
+            "agent.memory.cross_kb_conversation_denied",
+            extra={
+                "conversation_id": conversation_id,
+                "knowledge_base_id": knowledge_base_id,
+            },
+        )
         return ""
     mem, _ = get_memory_context(db, conversation_id)
     history = format_conversation_history(
@@ -181,7 +222,9 @@ def _build_run_context(
         max_recursion_depth=settings.agent_max_recursion_depth,
         start_time=time.time(),
         query=request.query,
-        memory_history=_load_memory_history(db, request.conversation_id),
+        memory_history=_load_memory_history(
+            db, request.conversation_id, ctx_auth.knowledge_base.id
+        ),
     )
 
 
@@ -214,11 +257,23 @@ def _persist_conversation_messages(
     db: Session,
     *,
     conversation_id: str | None,
+    knowledge_base_id: str | None,
     query: str,
     answer: str,
 ) -> None:
-    """会话开启时把本轮 user/assistant 消息落库。"""
+    """会话开启时把本轮 user/assistant 消息落库；跨 KB 越权时静默丢弃。"""
     if not conversation_id or not answer:
+        return
+    if knowledge_base_id and not _conversation_belongs_to_kb(
+        db, conversation_id, knowledge_base_id
+    ):
+        logger.warning(
+            "agent.memory.cross_kb_persist_denied",
+            extra={
+                "conversation_id": conversation_id,
+                "knowledge_base_id": knowledge_base_id,
+            },
+        )
         return
     add_message_to_conversation(db, conversation_id, MessageRole.USER, query)
     add_message_to_conversation(db, conversation_id, MessageRole.ASSISTANT, answer)
@@ -279,15 +334,23 @@ async def _run_pipeline(
         AuditService().record(
             db,
             action=AuditAction.AGENT_QUERY,
-            resource_type="knowledge_base",
-            resource_id=ctx_auth.knowledge_base.id,
+            resource_type="agent_run",
+            resource_id=run_ctx.run_id,
             result=AuditResult.SUCCESS,
             context=ctx_auth,
+            detail=json.dumps(
+                {
+                    "knowledge_base_id": run_ctx.knowledge_base_id,
+                    "mode": run_ctx.mode,
+                },
+                ensure_ascii=False,
+            ),
         )
 
         _persist_conversation_messages(
             db,
             conversation_id=request.conversation_id,
+            knowledge_base_id=ctx_auth.knowledge_base.id,
             query=request.query,
             answer=result.answer,
         )
@@ -316,8 +379,17 @@ async def _run_pipeline(
                 db.rollback()
             except Exception:
                 pass
+        # HaltSignal → HTTP：按治理熔断种类精细分派，前端可据此差异化提示与重试策略。
+        if halt.status == AgentRunStatus.HALTED_TIMEOUT:
+            http_status = status.HTTP_504_GATEWAY_TIMEOUT
+        elif halt.status == AgentRunStatus.HALTED_QUOTA:
+            http_status = status.HTTP_429_TOO_MANY_REQUESTS
+        else:
+            # HALTED_MAX_STEPS（含 recursion_depth 越界）：
+            # 仍语义为"给的空间不够，减少复杂度重试"，返 429。
+            http_status = status.HTTP_429_TOO_MANY_REQUESTS
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            status_code=http_status,
             detail=halt.reason,
         ) from halt
 
@@ -528,6 +600,12 @@ async def list_modes(
                 "mode": "plan",
                 "description": "Plan-then-Execute - plan first, execute second",
             },
-            {"mode": "langgraph", "description": "State machine workflow"},
+            {
+                "mode": "langgraph",
+                "description": (
+                    "P0: alias of react (single loop); "
+                    "state graph deferred to P1"
+                ),
+            },
         ]
     }

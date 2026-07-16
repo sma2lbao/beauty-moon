@@ -60,3 +60,15 @@ def test_passes_when_all_ok(monkeypatch):
     ctx = _ctx()
     # 不抛即通过
     check_step(db=None, ctx=ctx, step_index=0)
+
+
+def test_halts_on_recursion_depth(monkeypatch):
+    """recursion_depth 超过 max_recursion_depth 时立即熔断为 HALTED_MAX_STEPS。"""
+    import app.agent.core.governance as gov
+    monkeypatch.setattr(gov, "check_quota", lambda *a, **k: None)
+    ctx = _ctx(max_recursion_depth=3)
+    ctx.recursion_depth = 5
+    with pytest.raises(HaltSignal) as exc:
+        check_step(db=None, ctx=ctx, step_index=0)
+    assert exc.value.status == AgentRunStatus.HALTED_MAX_STEPS
+    assert "recursion" in exc.value.reason.lower()
