@@ -1,5 +1,5 @@
 """Agent 轨迹记录器：写 agent_runs / agent_steps，全程 fail-safe。"""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -101,7 +101,7 @@ class TraceRecorder:
                     AgentRun.total_cost: total_cost,
                     AgentRun.latency_ms: latency_ms,
                     AgentRun.error_message: error_message,
-                    AgentRun.finished_at: datetime.now(timezone.utc),
+                    AgentRun.finished_at: datetime.now(UTC),
                 },
                 synchronize_session=False,
             )
@@ -112,7 +112,9 @@ class TraceRecorder:
 
     def _safe_rollback(self) -> None:
         """尽力回滚；即使回滚本身失败也吞掉。"""
-        try:
+        # 刻意保留 try/except/pass：fail-safe 兜底，
+        # 明确表达"任何异常都吞掉、不上抛"的意图。
+        try:  # noqa: SIM105
             self.db.rollback()
         except Exception:
             pass
