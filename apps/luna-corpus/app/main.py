@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent_routes import router as agent_router
+from app.api.agent_runs_routes import router as agent_runs_router
 from app.api.auth_routes import router as auth_router
 from app.api.cost_routes import router as cost_router
 from app.api.metadata_routes import router as metadata_router
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(router)
     app.include_router(agent_router)
+    app.include_router(agent_runs_router)
     app.include_router(tenant_router)
     app.include_router(metadata_router)
     app.include_router(cost_router)
