@@ -9,10 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent.base import AgentResponse
+from app.agent.core.llm_loop import LoopResult
 from app.auth.permissions import PermissionSlug
 from app.auth.tokens import create_access_token
 from app.db.database import get_db
 from app.db.models import (
+    AgentRunStatus,
     Base,
     KnowledgeBase,
     Permission,
@@ -315,11 +317,10 @@ def test_query_empty_tools_uses_scoped_default_registry(client, app_db):
 
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
         mock_agent = AsyncMock()
-        mock_agent.run.return_value = AgentResponse(
+        mock_agent.run.return_value = LoopResult(
             answer="ok",
-            tool_calls=[],
+            status=AgentRunStatus.COMPLETED,
             steps=1,
-            latency_ms=100,
         )
         mock_create.return_value = mock_agent
 
@@ -363,11 +364,10 @@ def test_query_empty_list_sends_empty_registry(client, app_db):
 
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
         mock_agent = AsyncMock()
-        mock_agent.run.return_value = AgentResponse(
+        mock_agent.run.return_value = LoopResult(
             answer="ok",
-            tool_calls=[],
+            status=AgentRunStatus.COMPLETED,
             steps=1,
-            latency_ms=100,
         )
         mock_create.return_value = mock_agent
 
@@ -393,12 +393,14 @@ def test_stream_empty_list_sends_empty_registry(client, app_db):
     )
 
     with patch("app.api.agent_routes.AgentFactory.create") as mock_create:
-
-        async def stream_events(_query):
-            yield {"event": "done", "data": {"answer": "ok"}}
-
         mock_agent = AsyncMock()
-        mock_agent.run_stream = stream_events
+        # 新版 /stream 管线内部走 agent.run（不是 run_stream），
+        # 由 SSE 生成器在管线执行后组装 run_start + done 两事件下发。
+        mock_agent.run.return_value = LoopResult(
+            answer="ok",
+            status=AgentRunStatus.COMPLETED,
+            steps=1,
+        )
         mock_create.return_value = mock_agent
 
         response = client.post(
