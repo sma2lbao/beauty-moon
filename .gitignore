@@ -43,3 +43,16 @@ Thumbs.db
 .nx/migrate-runs
 .claude/worktrees
 .claude/settings.local.json
+
+vitest.config.*.timestamp*
+
+# Python / uv
+.venv
+/reports
+__pycache__/
+.ruff_cache
+*.egg-info
+# pytest-cov
+.coverage
+coverage.xml
+htmlcov/
