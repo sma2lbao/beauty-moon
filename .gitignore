@@ -42,6 +42,7 @@ Thumbs.db
 .nx/workspace-data
 .nx/migrate-runs
 .npm-cache/
+.uv-cache/
 .claude/worktrees
 .claude/settings.local.json
 

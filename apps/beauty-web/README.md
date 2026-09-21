@@ -12,6 +12,7 @@ monorepo 的 `apps/beauty-web` 目录下，由 npm workspaces 管理、Nx 识别
 | 数据 | @tanstack/react-query（服务端状态） |
 | 样式 | Tailwind CSS v4（`@tailwindcss/vite` 插件，CSS 变量主题） |
 | 组件 | shadcn/ui（new-york 风格，源码直接放进 `src/components/ui`） |
+| 测试 | Vitest + Testing Library（jsdom 环境，`vitest.config.mts`） |
 | 构建 | Vite 8 |
 
 ## 常用命令
@@ -23,6 +24,7 @@ npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
 npx nx build @beauty/web      # tsc 类型检查 + vite 生产构建
 npx nx preview @beauty/web    # 预览生产构建
 npx nx typecheck @beauty/web  # 仅类型检查
+npx nx test @beauty/web       # vitest + Testing Library 单测
 ```
 
 ## 目录结构
@@ -32,10 +34,12 @@ apps/beauty-web/
 ├── components.json            # shadcn/ui CLI 配置（npx shadcn add <组件>）
 ├── index.html
 ├── vite.config.ts              # react + tailwindcss 插件，@ -> src 别名
+├── vitest.config.mts           # vitest 配置（jsdom 环境，复用 @ 别名）
 └── src/
     ├── main.tsx                # 入口：QueryClientProvider + BrowserRouter
     ├── app.tsx                 # 路由表（SiteLayout 嵌套布局）
     ├── index.css               # Tailwind v4 主题：色板 / 字体 / 满月光盘样式
+    ├── vitest.setup.ts         # 测试 setup：jest-dom 匹配器 + cleanup
     ├── components/
     │   ├── layout/             # 页头、页脚、站点布局
     │   └── ui/                 # shadcn 组件（button / card / skeleton）
@@ -47,6 +51,9 @@ apps/beauty-web/
         ├── products.tsx        # /products 产品列表（useQuery + 心愿单交互）
         ├── about.tsx           # /about 品牌故事
         └── not-found.tsx       # 404
+
+测试文件与源码同目录（*.test.ts / *.test.tsx），覆盖 lib、ui 组件、
+布局、路由与各页面。
 ```
 
 ## 约定
@@ -58,3 +65,5 @@ apps/beauty-web/
   是唯一的 mock 层，接后端时只改这一个文件。
 - **主题**：色板定义在 `src/index.css` 的 `:root` / `.dark`（oklch），
   页头按钮可切换深浅色，偏好写入 localStorage。
+- **测试**：页面测试通过 `vi.mock('@/lib/products')` 控制 mock 接口的
+  返回（成功 / 失败 / 挂起），不依赖真实延时；组件测试只断言行为与可访问性。

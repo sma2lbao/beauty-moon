@@ -61,6 +61,7 @@ npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
 npx nx build @beauty/web      # tsc 类型检查 + vite 生产构建
 npx nx preview @beauty/web    # 预览生产构建
 npx nx typecheck @beauty/web  # 仅类型检查
+npx nx test @beauty/web       # vitest + Testing Library 单测
 ```
 
 React 19 + TypeScript SPA：react-router v8 路由、@tanstack/react-query 数据层、Tailwind CSS v4 + shadcn/ui 组件，详见 [apps/beauty-web/README.md](apps/beauty-web/README.md)。
