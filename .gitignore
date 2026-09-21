@@ -43,6 +43,8 @@ Thumbs.db
 .nx/migrate-runs
 .npm-cache/
 .uv-cache/
+.uv-python/
+.cache/
 .claude/worktrees
 .claude/settings.local.json
 
@@ -50,6 +52,7 @@ vitest.config.*.timestamp*
 
 # Python / uv
 .venv
+.env
 /reports
 __pycache__/
 .ruff_cache
