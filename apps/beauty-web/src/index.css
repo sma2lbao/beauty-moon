@@ -1,0 +1,154 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  美月 Beauty Moon · 月白瓷韵
+  --------------------------------------------------
+  底色：瓷白（比奶油色更冷、更透一点粉调）
+  墨色：墨梅（带梅子调的深色，代替纯黑）
+  主色：豆沙玫瑰（muted dusty rose，而不是 terracotta）
+  辅色：月霜 / 月光银
+  深色模式：月夜（蓝紫夜色，月亮换成月夜里的光）
+*/
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.984 0.007 25);
+  --foreground: oklch(0.25 0.035 350);
+  --card: oklch(0.995 0.004 25);
+  --card-foreground: oklch(0.25 0.035 350);
+  --popover: oklch(0.995 0.004 25);
+  --popover-foreground: oklch(0.25 0.035 350);
+  --primary: oklch(0.55 0.115 10);
+  --primary-foreground: oklch(0.985 0.006 25);
+  --secondary: oklch(0.94 0.015 340);
+  --secondary-foreground: oklch(0.35 0.04 350);
+  --muted: oklch(0.955 0.01 340);
+  --muted-foreground: oklch(0.5 0.025 350);
+  --accent: oklch(0.93 0.018 300);
+  --accent-foreground: oklch(0.32 0.04 340);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.905 0.012 345);
+  --input: oklch(0.905 0.012 345);
+  --ring: oklch(0.55 0.115 10);
+}
+
+.dark {
+  --background: oklch(0.17 0.022 300);
+  --foreground: oklch(0.93 0.01 310);
+  --card: oklch(0.21 0.024 300);
+  --card-foreground: oklch(0.93 0.01 310);
+  --popover: oklch(0.21 0.024 300);
+  --popover-foreground: oklch(0.93 0.01 310);
+  --primary: oklch(0.7 0.115 10);
+  --primary-foreground: oklch(0.18 0.03 350);
+  --secondary: oklch(0.27 0.025 300);
+  --secondary-foreground: oklch(0.88 0.012 310);
+  --muted: oklch(0.25 0.025 300);
+  --muted-foreground: oklch(0.68 0.02 310);
+  --accent: oklch(0.28 0.03 300);
+  --accent-foreground: oklch(0.9 0.012 310);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.7 0.115 10);
+}
+
+@theme inline {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'HarmonyOS Sans SC',
+    'Microsoft YaHei', sans-serif;
+  --font-display:
+    Georgia, 'Times New Roman', 'Songti SC', 'Noto Serif SC', 'STSong', serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/*
+  满月光盘：首页的记忆点，纯 CSS 绘制。
+  月海用几处稍深的径向渐变模拟，球体感靠内侧阴影，光晕靠外阴影。
+*/
+@layer components {
+  .moon-disc {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 9999px;
+    background-color: oklch(0.935 0.028 85);
+    background-image:
+      radial-gradient(
+        circle at 68% 30%,
+        oklch(0.885 0.032 85) 0 13%,
+        transparent 14%
+      ),
+      radial-gradient(
+        circle at 30% 62%,
+        oklch(0.9 0.028 85) 0 10%,
+        transparent 11%
+      ),
+      radial-gradient(
+        circle at 56% 72%,
+        oklch(0.9 0.028 85) 0 6%,
+        transparent 7%
+      ),
+      radial-gradient(
+        circle at 78% 58%,
+        oklch(0.885 0.032 85) 0 5%,
+        transparent 6%
+      ),
+      radial-gradient(
+        circle at 42% 22%,
+        oklch(0.905 0.026 85) 0 4%,
+        transparent 5%
+      );
+    box-shadow:
+      0 0 50px oklch(0.85 0.07 70 / 0.45),
+      0 0 120px oklch(0.85 0.06 70 / 0.3),
+      inset -16px -22px 48px oklch(0.76 0.06 60 / 0.35);
+  }
+
+  .dark .moon-disc {
+    background-color: oklch(0.9 0.026 85);
+    box-shadow:
+      0 0 60px oklch(0.75 0.08 60 / 0.5),
+      0 0 160px oklch(0.75 0.07 60 / 0.35),
+      inset -16px -22px 48px oklch(0.7 0.07 60 / 0.45);
+  }
+}

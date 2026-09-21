@@ -19,7 +19,8 @@
     "vitest": "~4.1.0"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "dependencies": {}
 }
