@@ -1,7 +1,7 @@
 # beauty-web
 
-美月 Beauty Moon 品牌前台站点。React + TypeScript SPA，位于 monorepo 的 `apps/` 下，
-由 npm workspaces 管理、Nx 识别。
+美月 Beauty Moon 品牌前台站点（包名 `@beauty/web`）。React + TypeScript SPA，位于
+monorepo 的 `apps/beauty-web` 目录下，由 npm workspaces 管理、Nx 识别。
 
 ## 技术栈
 
@@ -19,10 +19,10 @@
 在仓库根目录运行（或 `cd apps/beauty-web` 后用 npm run）：
 
 ```sh
-npx nx dev @beauty-moon/beauty-web        # 启动 dev server（默认 5173 端口）
-npx nx build @beauty-moon/beauty-web      # tsc 类型检查 + vite 生产构建
-npx nx preview @beauty-moon/beauty-web    # 预览生产构建
-npx nx typecheck @beauty-moon/beauty-web  # 仅类型检查
+npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
+npx nx build @beauty/web      # tsc 类型检查 + vite 生产构建
+npx nx preview @beauty/web    # 预览生产构建
+npx nx typecheck @beauty/web  # 仅类型检查
 ```
 
 ## 目录结构

@@ -4,7 +4,7 @@ export default defineConfig(() => ({
   root: import.meta.dirname,
   cacheDir: '../../node_modules/.vite/packages/ts-utils',
   test: {
-    name: '@beauty-moon/ts-utils',
+    name: '@beauty/ts-utils',
     watch: false,
     globals: true,
     environment: 'node',

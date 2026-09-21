@@ -1,6 +1,6 @@
 # beauty-moon
 
-基于 [Nx](https://nx.dev) 管理的 monorepo，混合 **TypeScript** 与 **Python** 两种语言；Python 侧统一使用 [uv](https://docs.astral.sh/uv/) 管理依赖与虚拟环境（通过 [nxlv/python](https://github.com/lucasvieirasilva/nx-plugins) 插件集成到 Nx）。
+基于 [Nx](https://nx.dev) 管理的 monorepo，包含 **TypeScript** 工具库（`packages/*`）、**React 前端应用**（`apps/*`）与 **Python** 库三类项目；Python 侧统一使用 [uv](https://docs.astral.sh/uv/) 管理依赖与虚拟环境（通过 [nxlv/python](https://github.com/lucasvieirasilva/nx-plugins) 插件集成到 Nx）。
 
 ## 环境要求
 
@@ -15,6 +15,11 @@
 
 ```
 beauty-moon/
+├── apps/
+│   └── beauty-web/             # 品牌前台站点（React + react-router + react-query + Tailwind + shadcn/ui）
+│       ├── src/                # 页面 / 组件 / 路由
+│       ├── index.html
+│       └── vite.config.ts      # react + tailwindcss 插件，@ -> src 别名
 ├── packages/
 │   ├── ts-utils/               # TypeScript 库示例（tsc 构建 + vitest 测试）
 │   │   ├── src/                # 源码
@@ -28,8 +33,8 @@ beauty-moon/
 │       ├── uv.lock             # uv 锁文件（提交到 git）
 │       └── project.json        # Nx 目标定义
 ├── nx.json                     # Nx 配置
-├── tsconfig.base.json          # TS 路径别名（@beauty-moon/*）
-└── package.json                # JS 依赖 + npm workspaces(packages/*)
+├── tsconfig.base.json          # TS 基础配置（customConditions: @beauty/source）
+└── package.json                # JS 依赖 + npm workspaces（packages/* 与 apps/*）
 ```
 
 ## 常用命令
@@ -44,10 +49,21 @@ npx nx show projects             # 列出所有项目
 ### TypeScript（ts-utils）
 
 ```sh
-npx nx build @beauty-moon/ts-utils   # tsc 构建到 dist/
-npx nx test @beauty-moon/ts-utils    # vitest 单测
-npx nx typecheck @beauty-moon/ts-utils
+npx nx build @beauty/ts-utils   # tsc 构建到 dist/
+npx nx test @beauty/ts-utils    # vitest 单测
+npx nx typecheck @beauty/ts-utils
 ```
+
+### 前端（beauty-web）
+
+```sh
+npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
+npx nx build @beauty/web      # tsc 类型检查 + vite 生产构建
+npx nx preview @beauty/web    # 预览生产构建
+npx nx typecheck @beauty/web  # 仅类型检查
+```
+
+React 19 + TypeScript SPA：react-router v8 路由、@tanstack/react-query 数据层、Tailwind CSS v4 + shadcn/ui 组件，详见 [apps/beauty-web/README.md](apps/beauty-web/README.md)。
 
 ### Python（py-utils）
 
@@ -70,6 +86,8 @@ npx nx build py-utils    # hatchling 构建 wheel/sdist 到 dist/
 ```sh
 npx nx g @nx/js:lib packages/<名称> --unitTestRunner=vitest --bundler=tsc
 ```
+
+生成器沿用根 package.json 的 npm 作用域，新包命名为 `@beauty/<名称>`。
 
 ### Python（uv）
 
@@ -98,6 +116,7 @@ npx nx run py-utils:sync              # 同步 .venv
 
 ## 其他
 
-- **路径别名**：TS 包在 `tsconfig.base.json` 中以 `@beauty-moon/*` 互相引用。
+- **包作用域**：JS 包统一使用 `@beauty/*` 作用域（根包为 `@beauty/source`）；目录名带 `beauty-` 前缀的项目在包名中省略该前缀（如 `apps/beauty-web` 的包名为 `@beauty/web`）。
+- **源码解析**：`tsconfig.base.json` 通过 customConditions 让包间解析直接指向源码。
 - **共享 venv**：默认每个 Python 项目独立 `.venv`；如需工作区共享，可运行 `npx nx g @nxlv/python:migrate-to-shared-venv`。
 - **发布**：Python 项目已内置 `@nxlv/python` 的 release 集成，TS 包可用 `npx nx release`。
