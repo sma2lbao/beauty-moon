@@ -1,5 +1,5 @@
 [project]
-name = "beauty-ink"
+name = "ink"
 version = "0.1.0"
 description = "个人知识库（RAG 问答）应用：LlamaIndex + DeepSeek + bge-m3 + ChromaDB"
 readme = "README.md"

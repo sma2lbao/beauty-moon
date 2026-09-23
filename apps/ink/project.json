@@ -1,8 +1,8 @@
 {
-  "name": "beauty-ink",
+  "name": "ink",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
-  "sourceRoot": "apps/beauty-ink/ink",
+  "sourceRoot": "apps/ink/ink",
   "targets": {
     "lock": {
       "executor": "@nxlv/python:lock",

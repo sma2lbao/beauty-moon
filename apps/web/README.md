@@ -1,23 +1,23 @@
-# beauty-web
+# web
 
 美月 Beauty Moon 品牌前台站点（包名 `@beauty/web`）。React + TypeScript SPA，位于
-monorepo 的 `apps/beauty-web` 目录下，由 npm workspaces 管理、Nx 识别。
+monorepo 的 `apps/web` 目录下，由 npm workspaces 管理、Nx 识别。
 
 ## 技术栈
 
-| 类别 | 选型 |
-| --- | --- |
-| 框架 | React 19 + TypeScript |
-| 路由 | react-router v8（`BrowserRouter` + 嵌套路由） |
-| 数据 | @tanstack/react-query（服务端状态） |
-| 样式 | Tailwind CSS v4（`@tailwindcss/vite` 插件，CSS 变量主题） |
+| 类别 | 选型                                                         |
+| ---- | ------------------------------------------------------------ |
+| 框架 | React 19 + TypeScript                                        |
+| 路由 | react-router v8（`BrowserRouter` + 嵌套路由）                |
+| 数据 | @tanstack/react-query（服务端状态）                          |
+| 样式 | Tailwind CSS v4（`@tailwindcss/vite` 插件，CSS 变量主题）    |
 | 组件 | shadcn/ui（new-york 风格，源码直接放进 `src/components/ui`） |
-| 测试 | Vitest + Testing Library（jsdom 环境，`vitest.config.mts`） |
-| 构建 | Vite 8 |
+| 测试 | Vitest + Testing Library（jsdom 环境，`vitest.config.mts`）  |
+| 构建 | Vite 8                                                       |
 
 ## 常用命令
 
-在仓库根目录运行（或 `cd apps/beauty-web` 后用 npm run）：
+在仓库根目录运行（或 `cd apps/web` 后用 npm run）：
 
 ```sh
 npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
@@ -30,7 +30,7 @@ npx nx test @beauty/web       # vitest + Testing Library 单测
 ## 目录结构
 
 ```
-apps/beauty-web/
+apps/web/
 ├── components.json            # shadcn/ui CLI 配置（npx shadcn add <组件>）
 ├── index.html
 ├── vite.config.ts              # react + tailwindcss 插件，@ -> src 别名

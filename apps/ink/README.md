@@ -1,29 +1,29 @@
-# beauty-ink
+# ink
 
 本地优先的个人知识库（RAG 问答）应用：把本地文件夹中的笔记与文档建立索引，通过聊天界面提问，回答附带来源引用（文件名 + PDF 页码）。
 
 ## 技术栈
 
-| 组件 | 选型 | 说明 |
-| --- | --- | --- |
-| 语言 / 环境 | Python 3.11+（锁定 3.12），uv | 虚拟环境与依赖管理 |
-| RAG 框架 | LlamaIndex（`llama-index-core` 0.12+ 模块化拆分包） | 摄取 / 检索 / 问答编排 |
-| LLM | `deepseek-chat`（DeepSeek，OpenAI 兼容接口） | 仅问答时调用云端 API |
-| Embedding | `BAAI/bge-m3`（本地运行） | **首次运行自动下载约 2GB**，模型名可经 `.env` 更换 |
-| 重排 | `BAAI/bge-reranker-v2-m3`（FlagEmbedding 本地运行） | **首次使用需下载约 2.3GB** |
-| 向量库 | ChromaDB | 持久化到 `./data/chroma` |
-| 文档解析 | MarkdownNodeParser / SentenceSplitter / PyMuPDF / python-docx | 四种格式 |
-| UI | Streamlit | 聊天界面 + 流式输出 + 引用展示 |
-| 配置 | pydantic-settings | 读取 `.env`，**API key 绝不进代码** |
+| 组件        | 选型                                                          | 说明                                               |
+| ----------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| 语言 / 环境 | Python 3.11+（锁定 3.12），uv                                 | 虚拟环境与依赖管理                                 |
+| RAG 框架    | LlamaIndex（`llama-index-core` 0.12+ 模块化拆分包）           | 摄取 / 检索 / 问答编排                             |
+| LLM         | `deepseek-chat`（DeepSeek，OpenAI 兼容接口）                  | 仅问答时调用云端 API                               |
+| Embedding   | `BAAI/bge-m3`（本地运行）                                     | **首次运行自动下载约 2GB**，模型名可经 `.env` 更换 |
+| 重排        | `BAAI/bge-reranker-v2-m3`（FlagEmbedding 本地运行）           | **首次使用需下载约 2.3GB**                         |
+| 向量库      | ChromaDB                                                      | 持久化到 `./data/chroma`                           |
+| 文档解析    | MarkdownNodeParser / SentenceSplitter / PyMuPDF / python-docx | 四种格式                                           |
+| UI          | Streamlit                                                     | 聊天界面 + 流式输出 + 引用展示                     |
+| 配置        | pydantic-settings                                             | 读取 `.env`，**API key 绝不进代码**                |
 
 ## ⚠️ 首次运行会下载模型（重要）
 
 本应用为本地优先设计，Embedding 与重排模型均在本地运行：
 
-| 模型 | 体积 | 何时下载 |
-| --- | --- | --- |
-| `BAAI/bge-m3`（或你在 `.env` 配置的 EMBEDDING_MODEL） | **约 2GB** | 第一次 `ink scan` / 提问时 |
-| `BAAI/bge-reranker-v2-m3` | **约 2.3GB** | 第一次 `query` / `search --hybrid` / UI 提问时 |
+| 模型                                                  | 体积         | 何时下载                                       |
+| ----------------------------------------------------- | ------------ | ---------------------------------------------- |
+| `BAAI/bge-m3`（或你在 `.env` 配置的 EMBEDDING_MODEL） | **约 2GB**   | 第一次 `ink scan` / 提问时                     |
+| `BAAI/bge-reranker-v2-m3`                             | **约 2.3GB** | 第一次 `query` / `search --hybrid` / UI 提问时 |
 
 - 模型缓存在 `~/.cache/huggingface`（可用 `HF_HOME` 重定向），下载一次后离线可用
 - 轻量替代：`EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5`（约 100MB）可用于快速体验
@@ -33,7 +33,7 @@
 ## 快速开始
 
 ```sh
-cd apps/beauty-ink
+cd apps/ink
 
 # 1. 配置 .env（key 只放 .env，绝不进代码）
 cp .env.example .env
@@ -56,17 +56,17 @@ uv run python -m ink query "视黄醇孕期还能用吗"
 
 # 6. 聊天 UI（Streamlit：流式输出 + 引用 + 过滤侧边栏）
 uv run streamlit run ink/ui.py
-# 或经 Nx：npx nx serve beauty-ink
+# 或经 Nx：npx nx serve ink
 ```
 
 ## CLI 命令参考
 
-| 命令 | 说明 |
-| --- | --- |
-| `ink scan <路径>`（别名 `ingest`） | 递归摄取 `.md/.txt/.pdf/.docx`，按文件 hash 增量更新：未入库→新增；未变化→跳过（输出"跳过 N 个未变化文件"）；变化→删旧节点再插入 |
-| `ink search <问题> [--top-k N]` | 纯向量检索预览（不调 LLM、无需 key） |
-| `ink search <问题> --hybrid` | 完整管线预览：向量 + BM25 → RRF 融合 → bge-reranker 重排 |
-| `ink query <问题> [--top-k 10] [--top-n 5]` | 混合检索 + 重排 + DeepSeek 生成，末尾附引用列表 |
+| 命令                                        | 说明                                                                                                                             |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `ink scan <路径>`（别名 `ingest`）          | 递归摄取 `.md/.txt/.pdf/.docx`，按文件 hash 增量更新：未入库→新增；未变化→跳过（输出"跳过 N 个未变化文件"）；变化→删旧节点再插入 |
+| `ink search <问题> [--top-k N]`             | 纯向量检索预览（不调 LLM、无需 key）                                                                                             |
+| `ink search <问题> --hybrid`                | 完整管线预览：向量 + BM25 → RRF 融合 → bge-reranker 重排                                                                         |
+| `ink query <问题> [--top-k 10] [--top-n 5]` | 混合检索 + 重排 + DeepSeek 生成，末尾附引用列表                                                                                  |
 
 ## 架构与数据流
 
@@ -103,7 +103,7 @@ top 5 → 拼装带编号上下文 → DeepSeek 流式生成（句末 [n] 标注
 ## 目录结构
 
 ```
-beauty-ink/
+ink/
 ├── ink/               # 主包（CLI / 配置 / 读取 / 摄取 / 检索 / 问答 / UI）
 │   ├── cli.py         # 命令行入口（scan / search / query）
 │   ├── config.py      # pydantic-settings（.env 驱动）
@@ -121,15 +121,15 @@ beauty-ink/
 
 ## 配置参考（.env）
 
-| 变量 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `DEEPSEEK_API_KEY` | ✅ | — | DeepSeek 平台 API key（仅问答需要） |
-| `EMBEDDING_MODEL` | ✅ | — | 本地 Embedding 模型名，如 `BAAI/bge-m3` |
-| `RERANKER_MODEL` | — | `BAAI/bge-reranker-v2-m3` | 重排模型；留空跳过重排 |
-| `DEEPSEEK_BASE_URL` | — | `https://api.deepseek.com` | OpenAI 兼容接口地址 |
-| `DEEPSEEK_MODEL` | — | `deepseek-chat` | 模型名 |
-| `CHROMA_DIR` | — | `./data/chroma` | 向量库持久化目录 |
-| `CHROMA_COLLECTION` | — | `beauty_ink` | collection 名称 |
+| 变量                | 必填 | 默认值                     | 说明                                    |
+| ------------------- | ---- | -------------------------- | --------------------------------------- |
+| `DEEPSEEK_API_KEY`  | ✅   | —                          | DeepSeek 平台 API key（仅问答需要）     |
+| `EMBEDDING_MODEL`   | ✅   | —                          | 本地 Embedding 模型名，如 `BAAI/bge-m3` |
+| `RERANKER_MODEL`    | —    | `BAAI/bge-reranker-v2-m3`  | 重排模型；留空跳过重排                  |
+| `DEEPSEEK_BASE_URL` | —    | `https://api.deepseek.com` | OpenAI 兼容接口地址                     |
+| `DEEPSEEK_MODEL`    | —    | `deepseek-chat`            | 模型名                                  |
+| `CHROMA_DIR`        | —    | `./data/chroma`            | 向量库持久化目录                        |
+| `CHROMA_COLLECTION` | —    | `beauty_ink`               | collection 名称                         |
 
 ## FAQ
 

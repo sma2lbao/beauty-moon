@@ -4,22 +4,23 @@
 
 ## 环境要求
 
-| 工具 | 版本 | 说明 |
-| --- | --- | --- |
-| Node.js | >= 20.19（本机 24.x） | 运行 Nx 与 JS 工具链 |
-| npm | 随 Node | 安装 JS 依赖 |
-| Python | 3.14.x | 各 Python 项目由 `.python-version` 锁定，uv 自动解析 |
-| uv | >= 0.5 | Python 包管理 / 虚拟环境 / 构建 |
+| 工具    | 版本                  | 说明                                                 |
+| ------- | --------------------- | ---------------------------------------------------- |
+| Node.js | >= 20.19（本机 24.x） | 运行 Nx 与 JS 工具链                                 |
+| npm     | 随 Node               | 安装 JS 依赖                                         |
+| Python  | 3.14.x                | 各 Python 项目由 `.python-version` 锁定，uv 自动解析 |
+| uv      | >= 0.5                | Python 包管理 / 虚拟环境 / 构建                      |
 
 ## 目录结构
 
 ```
 beauty-moon/
 ├── apps/
-│   └── beauty-web/             # 品牌前台站点（React + react-router + react-query + Tailwind + shadcn/ui）
-│       ├── src/                # 页面 / 组件 / 路由
-│       ├── index.html
-│       └── vite.config.ts      # react + tailwindcss 插件，@ -> src 别名
+│   ├── web/                    # 品牌前台站点（React + react-router + react-query + Tailwind + shadcn/ui）
+│   │   ├── src/                # 页面 / 组件 / 路由
+│   │   ├── index.html
+│   │   └── vite.config.ts      # react + tailwindcss 插件，@ -> src 别名
+│   └── ink/                    # 本地优先个人知识库（Python + LlamaIndex + ChromaDB RAG 问答）
 ├── packages/
 │   ├── ts-utils/               # TypeScript 库示例（tsc 构建 + vitest 测试）
 │   │   ├── src/                # 源码
@@ -54,7 +55,7 @@ npx nx test @beauty/ts-utils    # vitest 单测
 npx nx typecheck @beauty/ts-utils
 ```
 
-### 前端（beauty-web）
+### 前端（web）
 
 ```sh
 npx nx dev @beauty/web        # 启动 dev server（默认 5173 端口）
@@ -64,7 +65,18 @@ npx nx typecheck @beauty/web  # 仅类型检查
 npx nx test @beauty/web       # vitest + Testing Library 单测
 ```
 
-React 19 + TypeScript SPA：react-router v8 路由、@tanstack/react-query 数据层、Tailwind CSS v4 + shadcn/ui 组件，详见 [apps/beauty-web/README.md](apps/beauty-web/README.md)。
+React 19 + TypeScript SPA：react-router v8 路由、@tanstack/react-query 数据层、Tailwind CSS v4 + shadcn/ui 组件，详见 [apps/web/README.md](apps/web/README.md)。
+
+### 知识库（ink）
+
+```sh
+npx nx sync ink           # uv sync：创建/更新 .venv 与依赖
+npx nx lint ink           # ruff 检查
+npx nx format ink         # ruff 格式化
+npx nx serve ink          # Streamlit 聊天 UI（8501 端口）
+```
+
+本地优先 RAG 问答应用（LlamaIndex + DeepSeek + bge-m3 + ChromaDB），详见 [apps/ink/README.md](apps/ink/README.md)。
 
 ### Python（py-utils）
 
@@ -117,7 +129,7 @@ npx nx run py-utils:sync              # 同步 .venv
 
 ## 其他
 
-- **包作用域**：JS 包统一使用 `@beauty/*` 作用域（根包为 `@beauty/source`）；目录名带 `beauty-` 前缀的项目在包名中省略该前缀（如 `apps/beauty-web` 的包名为 `@beauty/web`）。
+- **包作用域**：JS 包统一使用 `@beauty/*` 作用域（根包为 `@beauty/source`）；应用目录名不带 `beauty-` 前缀（`apps/web`、`apps/ink`），JS 包名即 `@beauty/<目录名>`。
 - **源码解析**：`tsconfig.base.json` 通过 customConditions 让包间解析直接指向源码。
 - **共享 venv**：默认每个 Python 项目独立 `.venv`；如需工作区共享，可运行 `npx nx g @nxlv/python:migrate-to-shared-venv`。
 - **发布**：Python 项目已内置 `@nxlv/python` 的 release 集成，TS 包可用 `npx nx release`。

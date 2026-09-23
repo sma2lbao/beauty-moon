@@ -91,14 +91,14 @@ def _stream_deltas(llm, prompt: str) -> Generator[str]:
 
 def main() -> None:
     """Streamlit 应用入口。"""
-    st.set_page_config(page_title="beauty-ink", page_icon="🖌️", layout="wide")
-    st.title("🖌️ beauty-ink 个人知识库")
+    st.set_page_config(page_title="ink", page_icon="🖌️", layout="wide")
+    st.title("🖌️ ink 个人知识库")
     st.caption("本地 RAG 问答：混合检索（向量 + BM25）→ bge-reranker 重排 → DeepSeek 生成")
 
     settings = get_settings()
     if not settings.embedding_model or not settings.deepseek_api_key:
         st.warning(
-            "尚未完成配置：请在 apps/beauty-ink/.env 中设置 "
+            "尚未完成配置：请在 apps/ink/.env 中设置 "
             "`DEEPSEEK_API_KEY` 与 `EMBEDDING_MODEL`（参考 .env.example），"
             "并先执行 `uv run python -m ink scan ./docs` 摄取文档。"
         )

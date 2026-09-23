@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 项目根目录（apps/beauty-ink/），用于定位 .env 与数据目录
+# 项目根目录（apps/ink/），用于定位 .env 与数据目录
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 

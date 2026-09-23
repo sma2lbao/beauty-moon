@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器。"""
     parser = argparse.ArgumentParser(
         prog="ink",
-        description="beauty-ink：本地优先的个人知识库（RAG 问答）",
+        description="ink：本地优先的个人知识库（RAG 问答）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

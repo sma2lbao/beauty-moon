@@ -13,7 +13,7 @@ export default defineConfig({
   test: {
     name: '@beauty/web',
     root: import.meta.dirname,
-    cacheDir: '../../node_modules/.vite/apps/beauty-web',
+    cacheDir: '../../node_modules/.vite/apps/web',
     watch: false,
     globals: true,
     environment: 'jsdom',
