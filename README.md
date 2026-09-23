@@ -4,12 +4,12 @@
 
 ## 环境要求
 
-| 工具    | 版本                  | 说明                                                 |
-| ------- | --------------------- | ---------------------------------------------------- |
-| Node.js | >= 20.19（本机 24.x） | 运行 Nx 与 JS 工具链                                 |
-| npm     | 随 Node               | 安装 JS 依赖                                         |
-| Python  | 3.14.x                | 各 Python 项目由 `.python-version` 锁定，uv 自动解析 |
-| uv      | >= 0.5                | Python 包管理 / 虚拟环境 / 构建                      |
+| 工具    | 版本                  | 说明                                                    |
+| ------- | --------------------- | ------------------------------------------------------- |
+| Node.js | >= 20.19（本机 24.x） | 运行 Nx 与 JS 工具链                                    |
+| npm     | 随 Node               | 安装 JS 依赖                                            |
+| Python  | 3.12.x                | uv workspace 共享 venv，由根 `.python-version` 统一锁定 |
+| uv      | >= 0.5                | Python 包管理 / 虚拟环境 / 构建                         |
 
 ## 目录结构
 
@@ -29,10 +29,11 @@ beauty-moon/
 │   └── py-utils/               # Python 库示例（uv + pytest + ruff + hatchling）
 │       ├── py_utils/           # Python 包源码
 │       ├── tests/              # pytest 测试
-│       ├── .python-version     # 锁定 Python 3.14.5
 │       ├── pyproject.toml      # 依赖 / 构建 / ruff / pytest 配置
-│       ├── uv.lock             # uv 锁文件（提交到 git）
 │       └── project.json        # Nx 目标定义
+├── pyproject.toml              # uv workspace 容器（共享 venv）
+├── .python-version             # 锁定 Python 3.12（整个 workspace）
+├── uv.lock                     # uv 锁文件（所有 Python 项目共享，提交到 git）
 ├── nx.json                     # Nx 配置
 ├── tsconfig.base.json          # TS 基础配置（customConditions: @beauty/source）
 └── package.json                # JS 依赖 + npm workspaces（packages/* 与 apps/*）
@@ -70,7 +71,7 @@ React 19 + TypeScript SPA：react-router v8 路由、@tanstack/react-query 数�
 ### 知识库（ink）
 
 ```sh
-npx nx sync ink           # uv sync：创建/更新 .venv 与依赖
+npx nx sync ink           # uv sync：更新仓库根共享 .venv
 npx nx lint ink           # ruff 检查
 npx nx format ink         # ruff 格式化
 npx nx serve ink          # Streamlit 聊天 UI（8501 端口）
@@ -80,10 +81,10 @@ npx nx serve ink          # Streamlit 聊天 UI（8501 端口）
 
 ### Python（py-utils）
 
-首次运行任一目标时，uv 会自动在项目目录创建 `.venv` 并按 `uv.lock` 安装依赖。
+所有 Python 项目共享仓库根的 `.venv`（uv workspace，根 `pyproject.toml` 统一管理，Python 3.12）。
 
 ```sh
-npx nx sync py-utils     # uv sync：创建/更新 .venv 与依赖
+npx nx sync py-utils     # uv sync：更新仓库根共享 .venv
 npx nx lint py-utils     # ruff 检查
 npx nx format py-utils   # ruff 格式化
 npx nx test py-utils     # pytest（含覆盖率与 HTML 报告）
@@ -109,7 +110,7 @@ npx nx g @nxlv/python:uv-project <项目名> \
   --projectType=library \
   --directory=packages/<目录名> \
   --moduleName=<python模块名> \
-  --pyenvPythonVersion=3.14.5 \
+  --pyenvPythonVersion=3.12 \
   --no-interactive
 ```
 
@@ -125,11 +126,11 @@ npx nx run py-utils:lock --update     # 更新 uv.lock
 npx nx run py-utils:sync              # 同步 .venv
 ```
 
-依赖统一写在各项目的 `pyproject.toml`（`[project.dependencies]` / `[dependency-groups]`），锁定信息提交 `uv.lock`。
+依赖统一写在各项目的 `pyproject.toml`（dev 依赖合并到根 `[dependency-groups].dev`），锁定信息提交根 `uv.lock`（全 workspace 共享一份）。
 
 ## 其他
 
 - **包作用域**：JS 包统一使用 `@beauty/*` 作用域（根包为 `@beauty/source`）；应用目录名不带 `beauty-` 前缀（`apps/web`、`apps/ink`），JS 包名即 `@beauty/<目录名>`。
 - **源码解析**：`tsconfig.base.json` 通过 customConditions 让包间解析直接指向源码。
-- **共享 venv**：默认每个 Python 项目独立 `.venv`；如需工作区共享，可运行 `npx nx g @nxlv/python:migrate-to-shared-venv`。
+- **共享 venv**：所有 Python 项目共用仓库根 `.venv`（uv workspace），Python 统一 3.12，依赖只装一份。
 - **发布**：Python 项目已内置 `@nxlv/python` 的 release 集成，TS 包可用 `npx nx release`。

@@ -6,7 +6,7 @@
 
 | 组件        | 选型                                                          | 说明                                               |
 | ----------- | ------------------------------------------------------------- | -------------------------------------------------- |
-| 语言 / 环境 | Python 3.11+（锁定 3.12），uv                                 | 虚拟环境与依赖管理                                 |
+| 语言 / 环境 | Python 3.11+（锁定 3.12），uv                                 | 共享仓库根 `.venv`（uv workspace）                 |
 | RAG 框架    | LlamaIndex（`llama-index-core` 0.12+ 模块化拆分包）           | 摄取 / 检索 / 问答编排                             |
 | LLM         | `deepseek-chat`（DeepSeek，OpenAI 兼容接口）                  | 仅问答时调用云端 API                               |
 | Embedding   | `BAAI/bge-m3`（本地运行）                                     | **首次运行自动下载约 2GB**，模型名可经 `.env` 更换 |
@@ -41,7 +41,7 @@ cp .env.example .env
 #   DEEPSEEK_API_KEY  DeepSeek 平台的 key（问答用，https://platform.deepseek.com/）
 #   EMBEDDING_MODEL   本地 Embedding 模型，如 BAAI/bge-m3（约 2GB）
 
-# 2. 安装依赖（自动创建 .venv，锁定 Python 3.12）
+# 2. 安装依赖（共享仓库根 .venv，Python 3.12；依赖清单为全 workspace）
 uv sync
 
 # 3. 摄取文档（首次会下载 Embedding 模型，见上方说明）

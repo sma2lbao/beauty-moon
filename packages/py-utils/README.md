@@ -2,7 +2,7 @@
 
 Python 工具库示例，由 `@nxlv/python:uv-project` 生成。
 
-- 包管理：uv（`uv.lock` 已提交）
+- 包管理：uv（共享仓库根 `.venv`，`uv.lock` 在仓库根）
 - 测试：pytest（含覆盖率 / HTML 报告）
 - Lint / Format：ruff
 - 构建：hatchling → `dist/`（wheel + sdist）

@@ -1,0 +1,24 @@
+[project]
+name = "beauty-moon"
+version = "1.0.0"
+# uv workspace 容器：所有 Python 项目共享仓库根 .venv（统一 Python 3.12）
+dependencies = ["ink", "py-utils"]
+
+[tool.uv.workspace]
+members = ["apps/ink", "packages/py-utils"]
+
+[tool.uv.sources.ink]
+workspace = true
+
+[tool.uv.sources.py-utils]
+workspace = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "autopep8>=2.3.1",
+    "pytest>=8.3.4",
+    "pytest-sugar>=1.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-html>=4.1.1",
+]

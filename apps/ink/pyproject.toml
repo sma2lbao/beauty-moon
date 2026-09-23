@@ -26,11 +26,6 @@ dependencies = [
 # CLI 入口：uv run ink <命令>
 ink = "ink.cli:main"
 
-[dependency-groups]
-dev = [
-    "ruff>=0.8",
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
