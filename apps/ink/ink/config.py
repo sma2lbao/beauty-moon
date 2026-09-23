@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     # API key：只从 .env / 环境变量读取，代码与日志中绝不出现明文
     deepseek_api_key: str = ""
     # DeepSeek 走 OpenAI 兼容接口
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = ""
+    deepseek_model: str = ""
 
     # ---- Embedding ----
     # 本地 Embedding 模型名：必须由使用者在 .env 中显式配置（EMBEDDING_MODEL）。
